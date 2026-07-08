@@ -26,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Whisper dictation graph
 
     let engine = ActiveEngine()
+
+    /// Declared before `hotkeys` on purpose: constructing the store runs
+    /// HotkeyMigration, which must finish before anything touches the
+    /// `KeyboardShortcuts.Name` statics. Stored properties initialize in
+    /// declaration order.
+    let hotkeyBindings = HotkeyBindingStore.shared
+
     private let hotkeys = HotkeyManager()
 
     let store: any DictationStore = {

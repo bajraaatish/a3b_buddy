@@ -237,10 +237,15 @@ final class HotkeyManager {
     }
 
     private var currentModifierOnlyShortcut: ModifierOnlyShortcut {
-        // Dictation = hold ⇧ Shift in the merged app. Shift doesn't overlap the
-        // companion's ⌃⌥ push-to-talk, so the two don't fight over the mic.
-        // Users can pick a different hold key (fn/⌘) from Settings.
-        ModifierOnlyShortcut.current(for: PrefKey.dictationModifierOnlyShortcut, default: .shift)
+        // Dictation = hold ⌃⇧. Bare ⇧ was the old default and was unusable: every
+        // capital letter opened the mic, and a lone ⇧ tap under `tapWindow` fell
+        // through to finish() → a phantom transcript pasted into the frontmost app.
+        // ⌃⇧ is also disjoint from the companion's ⌃⌥ push-to-talk (neither set is
+        // a prefix of the other), so neither has to wait to tell them apart.
+        //
+        // Read via HotkeyBindingBridge, not the legacy `holdKey`: Settings edits
+        // HotkeyBindingStore now. Both go away when HotkeyEngine lands.
+        ModifierOnlyShortcut.fromBindings(.dictation, fallback: .controlShift)
     }
 
     private func releaseHoldShortcutIfNeeded() {

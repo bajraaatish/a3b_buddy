@@ -116,7 +116,9 @@ final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     }
 
     private var currentModifierOnlyShortcut: ModifierOnlyShortcut {
-        ModifierOnlyShortcut.current(for: PrefKey.pushToTalkModifierOnlyShortcut, default: .controlOption)
+        // Read via HotkeyBindingBridge, not the legacy defaults key: Settings edits
+        // HotkeyBindingStore now. Both go away when HotkeyEngine lands.
+        MainActor.assumeIsolated { ModifierOnlyShortcut.fromBindings(.pushToTalk, fallback: .controlOption) }
     }
 
     private func installModifierOnlyEventTapIfNeeded() {

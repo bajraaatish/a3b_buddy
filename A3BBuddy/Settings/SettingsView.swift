@@ -5,7 +5,6 @@
 
 import SwiftUI
 import AVFoundation
-import KeyboardShortcuts
 import ServiceManagement
 
 struct SettingsView: View {
@@ -13,64 +12,44 @@ struct SettingsView: View {
     @AppStorage(PrefKey.preferredMicID) private var preferredMicID = ""
     @AppStorage(PrefKey.soundCues) private var soundCues = true
     @AppStorage(PrefKey.retention) private var retention = HistoryRetention.forever.rawValue
-    @AppStorage(PrefKey.dictationModifierOnlyShortcut) private var dictationModifierOnlyShortcut = ModifierOnlyShortcut.shift.rawValue
-    @AppStorage(PrefKey.pushToTalkModifierOnlyShortcut) private var pushToTalkModifierOnlyShortcut = ModifierOnlyShortcut.controlOption.rawValue
+
+    @ObservedObject private var hotkeyStore = HotkeyBindingStore.shared
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var mics: [(id: String, name: String)] = []
     @State private var inputMonitoringGranted = Permissions.inputMonitoringGranted
-    @State private var acceptedDictationShortcut: KeyboardShortcuts.Shortcut?
-    @State private var acceptedPushToTalkShortcut: KeyboardShortcuts.Shortcut?
-    @State private var acceptedDictationModifierOnlyShortcut = ModifierOnlyShortcut.shift.rawValue
-    @State private var acceptedPushToTalkModifierOnlyShortcut = ModifierOnlyShortcut.controlOption.rawValue
-    @State private var hotkeyConflictMessage: String?
-    @State private var isResolvingHotkeyConflict = false
-
-    private enum HotkeyOwner {
-        case dictation
-        case pushToTalk
-    }
+    @State private var hotkeyFeedback: HotkeyRecorderFeedback?
 
     var body: some View {
         Form {
             Section("Hotkeys") {
-                KeyboardShortcuts.Recorder("Dictation (Whisper)", name: .dictation)
-
-                Picker("Dictation modifier hold", selection: $dictationModifierOnlyShortcut) {
-                    ForEach(ModifierOnlyShortcut.allCases) { shortcut in
-                        Text(shortcut.displayName).tag(shortcut.rawValue)
-                    }
-                }
-
-                Text(dictationHotkeyHelpText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                hotkeyFeatureGroup(.dictation)
 
                 Divider()
 
-                KeyboardShortcuts.Recorder("Push-to-talk (Buddy)", name: .pushToTalk)
+                hotkeyFeatureGroup(.pushToTalk)
 
-                Picker("Push-to-talk modifier hold", selection: $pushToTalkModifierOnlyShortcut) {
-                    ForEach(ModifierOnlyShortcut.allCases) { shortcut in
-                        Text(shortcut.displayName).tag(shortcut.rawValue)
-                    }
-                }
-
-                Text(pushToTalkHotkeyHelpText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let hotkeyConflictMessage {
-                    Text(hotkeyConflictMessage)
+                if let hotkeyFeedback {
+                    Label(hotkeyFeedback.message, systemImage: hotkeyFeedbackIcon(for: hotkeyFeedback))
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(hotkeyFeedbackColor(for: hotkeyFeedback))
                 }
 
-                if needsInputMonitoringForModifierOnlyHotkeys, !inputMonitoringGranted {
+                HStack {
+                    Spacer()
+                    Button("Reset all hotkeys") {
+                        hotkeyStore.resetToDefaults()
+                        hotkeyFeedback = nil
+                    }
+                    .pointerCursor()
+                }
+
+                if hotkeyStore.needsInputMonitoring, !inputMonitoringGranted {
                     LabeledContent("Input Monitoring") {
                         Button("Grant in System Settings...") {
                             Permissions.requestInputMonitoring()
                             Permissions.openInputMonitoringSettings()
+                            inputMonitoringGranted = Permissions.inputMonitoringGranted
                         }
                         .pointerCursor()
                     }
@@ -117,127 +96,72 @@ struct SettingsView: View {
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
         .task { loadMics() }
-        .onAppear {
-            cacheAcceptedKeyboardShortcuts()
-            cacheAcceptedModifierOnlyShortcuts()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-            enforceKeyboardShortcutConflicts()
-        }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             inputMonitoringGranted = Permissions.inputMonitoringGranted
         }
-        .onChange(of: dictationModifierOnlyShortcut) { _, _ in
-            enforceModifierOnlyShortcutConflicts(changed: .dictation)
-        }
-        .onChange(of: pushToTalkModifierOnlyShortcut) { _, _ in
-            enforceModifierOnlyShortcutConflicts(changed: .pushToTalk)
-        }
     }
 
-    private var selectedDictationModifierOnlyShortcut: ModifierOnlyShortcut {
-        ModifierOnlyShortcut(rawValue: dictationModifierOnlyShortcut) ?? .shift
-    }
+    private func hotkeyFeatureGroup(_ feature: HotkeyFeature) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(feature.displayName)
+                .font(.headline)
 
-    private var selectedPushToTalkModifierOnlyShortcut: ModifierOnlyShortcut {
-        ModifierOnlyShortcut(rawValue: pushToTalkModifierOnlyShortcut) ?? .controlOption
-    }
-
-    private var needsInputMonitoringForModifierOnlyHotkeys: Bool {
-        selectedDictationModifierOnlyShortcut != .off || selectedPushToTalkModifierOnlyShortcut != .off
-    }
-
-    private var dictationHotkeyHelpText: String {
-        let shortcut = selectedDictationModifierOnlyShortcut
-        guard shortcut != .off else {
-            return "Hold the dictation combo to record, release to insert. Double-tap to lock hands-free; Esc cancels."
-        }
-
-        return "Hold \(shortcut.symbol) to record, release to insert. Double-tap to lock hands-free; Esc cancels. Shortcuts using extra keys cancel the hold."
-    }
-
-    private var pushToTalkHotkeyHelpText: String {
-        let shortcut = selectedPushToTalkModifierOnlyShortcut
-        guard shortcut != .off else {
-            return "Hold the push-to-talk combo to talk to Buddy, release to send."
-        }
-
-        return "Hold \(shortcut.symbol) to talk to Buddy, release to send."
-    }
-
-    private func cacheAcceptedKeyboardShortcuts() {
-        acceptedDictationShortcut = KeyboardShortcuts.getShortcut(for: .dictation)
-        acceptedPushToTalkShortcut = KeyboardShortcuts.getShortcut(for: .pushToTalk)
-    }
-
-    private func cacheAcceptedModifierOnlyShortcuts() {
-        acceptedDictationModifierOnlyShortcut = dictationModifierOnlyShortcut
-        acceptedPushToTalkModifierOnlyShortcut = pushToTalkModifierOnlyShortcut
-    }
-
-    private func enforceKeyboardShortcutConflicts() {
-        guard !isResolvingHotkeyConflict else { return }
-
-        let dictationShortcut = KeyboardShortcuts.getShortcut(for: .dictation)
-        let pushToTalkShortcut = KeyboardShortcuts.getShortcut(for: .pushToTalk)
-        let keyboardShortcutChanged = dictationShortcut != acceptedDictationShortcut
-            || pushToTalkShortcut != acceptedPushToTalkShortcut
-
-        guard let dictationShortcut,
-              let pushToTalkShortcut,
-              dictationShortcut == pushToTalkShortcut else {
-            if keyboardShortcutChanged {
-                hotkeyConflictMessage = nil
+            ForEach(0..<feature.maxBindings, id: \.self) { slot in
+                hotkeySlotRow(feature: feature, slot: slot)
             }
-            cacheAcceptedKeyboardShortcuts()
-            return
         }
-
-        let changedOwner: HotkeyOwner = dictationShortcut != acceptedDictationShortcut
-            ? .dictation
-            : .pushToTalk
-
-        isResolvingHotkeyConflict = true
-        switch changedOwner {
-        case .dictation:
-            KeyboardShortcuts.setShortcut(acceptedDictationShortcut, for: .dictation)
-            hotkeyConflictMessage = "Push-to-talk (Buddy) already uses that shortcut. Choose a different combo for dictation."
-        case .pushToTalk:
-            KeyboardShortcuts.setShortcut(acceptedPushToTalkShortcut, for: .pushToTalk)
-            hotkeyConflictMessage = "Dictation (Whisper) already uses that shortcut. Choose a different combo for push-to-talk."
-        }
-        isResolvingHotkeyConflict = false
-        cacheAcceptedKeyboardShortcuts()
+        .padding(.vertical, 2)
     }
 
-    private func enforceModifierOnlyShortcutConflicts(changed owner: HotkeyOwner) {
-        guard !isResolvingHotkeyConflict else { return }
+    private func hotkeySlotRow(feature: HotkeyFeature, slot: Int) -> some View {
+        let binding = hotkeyStore.binding(at: slot, for: feature)
 
-        let dictationShortcut = selectedDictationModifierOnlyShortcut
-        let pushToTalkShortcut = selectedPushToTalkModifierOnlyShortcut
-        let modifierOnlyShortcutChanged = dictationModifierOnlyShortcut != acceptedDictationModifierOnlyShortcut
-            || pushToTalkModifierOnlyShortcut != acceptedPushToTalkModifierOnlyShortcut
+        return HStack(spacing: 8) {
+            Text(slotLabel(for: slot))
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
 
-        guard dictationShortcut != .off,
-              pushToTalkShortcut != .off,
-              dictationShortcut == pushToTalkShortcut else {
-            if modifierOnlyShortcutChanged {
-                hotkeyConflictMessage = nil
+            HotkeyRecorderView(
+                store: hotkeyStore,
+                feature: feature,
+                slot: slot,
+                binding: binding,
+                placeholder: "Record...",
+                onFeedback: { hotkeyFeedback = $0 }
+            )
+            .frame(width: 124, height: 30)
+
+            Button {
+                hotkeyStore.setBinding(nil, at: slot, for: feature)
+                hotkeyFeedback = nil
+            } label: {
+                Image(systemName: "delete.left")
+                    .imageScale(.medium)
             }
-            cacheAcceptedModifierOnlyShortcuts()
-            return
+            .buttonStyle(.borderless)
+            .disabled(binding == nil)
+            .help("Clear \(feature.displayName.lowercased()) \(slotLabel(for: slot).lowercased()) hotkey")
+            .accessibilityLabel("Clear \(feature.displayName) \(slotLabel(for: slot).lowercased()) hotkey")
+            .pointerCursor(isEnabled: binding != nil)
         }
+    }
 
-        isResolvingHotkeyConflict = true
-        switch owner {
-        case .dictation:
-            dictationModifierOnlyShortcut = acceptedDictationModifierOnlyShortcut
-            hotkeyConflictMessage = "Push-to-talk (Buddy) already uses that modifier hold. Choose a different modifier hold for dictation."
-        case .pushToTalk:
-            pushToTalkModifierOnlyShortcut = acceptedPushToTalkModifierOnlyShortcut
-            hotkeyConflictMessage = "Dictation (Whisper) already uses that modifier hold. Choose a different modifier hold for push-to-talk."
+    private func slotLabel(for slot: Int) -> String {
+        slot == 0 ? "Primary" : "Alternate"
+    }
+
+    private func hotkeyFeedbackIcon(for feedback: HotkeyRecorderFeedback) -> String {
+        switch feedback.severity {
+        case .warning: "exclamationmark.triangle.fill"
+        case .blocking: "xmark.octagon.fill"
         }
-        isResolvingHotkeyConflict = false
+    }
+
+    private func hotkeyFeedbackColor(for feedback: HotkeyRecorderFeedback) -> Color {
+        switch feedback.severity {
+        case .warning: .orange
+        case .blocking: .red
+        }
     }
 
     private func loadMics() {

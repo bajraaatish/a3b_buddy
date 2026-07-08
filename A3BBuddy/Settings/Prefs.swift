@@ -14,6 +14,16 @@ enum PrefKey {
     static let soundCues = "soundCues"
     static let retention = "retention"
     static let hasOnboarded = "hasOnboarded"
+
+    // ── Flexible hotkeys. JSON-encoded `[HotkeyBinding]`. ────
+    static let dictationBinding = "hotkey.dictation"
+    static let pushToTalkBinding = "hotkey.pushToTalk"
+    static let hotkeyMigrationVersion = "hotkeyMigrationVersion"
+
+    // ── Legacy. Read once by HotkeyMigration, then never again. ────
+    // Both hold a `ModifierOnlyShortcut` raw value ("control+option", "shift",
+    // "off"). `holdKey` is older still and may hold a single token from the
+    // pre-merge `HoldKey` enum — same parse either way.
     static let dictationModifierOnlyShortcut = "holdKey"
     static let pushToTalkModifierOnlyShortcut = "pushToTalkModifierOnlyShortcut"
 }
@@ -31,6 +41,7 @@ struct ModifierOnlyShortcut: RawRepresentable, CaseIterable, Identifiable, Hasha
 
     static let control = Self(rawValue: "control")!
     static let controlOption = Self(rawValue: "control+option")!
+    static let controlShift = Self(rawValue: "control+shift")!
     static let shift = Self(rawValue: "shift")!
     static let off = Self(rawValue: "off")!
 
@@ -94,6 +105,15 @@ struct ModifierOnlyShortcut: RawRepresentable, CaseIterable, Identifiable, Hasha
         }
 
         self.rawValue = Self.normalizedRawValue(for: rawTokens)
+    }
+
+    /// Bridge from `HotkeyBinding.modifiersOnly`. Returns nil for an empty set.
+    init?(flags: NSEvent.ModifierFlags) {
+        let tokens = Self.modifierDefinitions
+            .filter { flags.contains($0.flag) }
+            .map(\.rawValue)
+        guard !tokens.isEmpty else { return nil }
+        self.init(rawValue: tokens.joined(separator: "+"))
     }
 
     var id: String { rawValue }
