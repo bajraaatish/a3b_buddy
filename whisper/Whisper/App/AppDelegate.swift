@@ -15,6 +15,13 @@ typealias ActiveEngine = RealDictationEngine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let engine = ActiveEngine()
+
+    /// Declared before `hotkeys` on purpose: constructing the store runs
+    /// HotkeyMigration, which must finish before HotkeyManager touches the
+    /// `KeyboardShortcuts.Name` statics. Stored properties initialize in
+    /// declaration order.
+    let hotkeyBindings = HotkeyBindingStore.shared
+
     private let hotkeys = HotkeyManager()
 
     let store: any DictationStore = {

@@ -14,11 +14,19 @@ enum PrefKey {
     static let soundCues = "soundCues"
     static let retention = "retention"
     static let hasOnboarded = "hasOnboarded"
+
+    /// Legacy. Read once by HotkeyMigration, then never again.
     static let holdKey = "holdKey"
+
+    // Flexible hotkeys. JSON-encoded `[HotkeyBinding]`.
+    static let dictationBinding = "hotkey.dictation"
+    static let pushToTalkBinding = "hotkey.pushToTalk"
+    static let hotkeyMigrationVersion = "hotkeyMigrationVersion"
 }
 
-/// Which bare modifier is the hold-to-talk trigger. The recordable combo in
-/// Settings works regardless; `off` leaves only the combo.
+/// Legacy: which bare modifier was the hold-to-talk trigger, back when the
+/// choice was a five-item dropdown. Superseded by `HotkeyBinding`, kept because
+/// HotkeyMigration reads it to carry the user's choice forward.
 enum HoldKey: String, CaseIterable, Identifiable {
     case control
     case option
