@@ -22,10 +22,31 @@ Three asks drive this wave:
 | **RECORDER** | ✅ merged — landed with W0 (`HotkeyRecorderView` + `SettingsView`) |
 | **AUDIT** | ✅ merged — `979417f`; stale copy applied, wiring request resolved |
 | **PILL** | ✅ merged — `9d58c7e` (four states, geometry trap fixed) |
-| **ENGINE** | ⬜ **the only lane left.** Worktree `../buddy-engine` is realigned onto `9d58c7e`. Brief: `docs/hotkey-engine-design.md` |
+| **ENGINE** | ✅ merged — `191fb4b` (one tap, pure state machine, bridge deleted) |
+| **W2 wiring** | ✅ `8d8f31f` — engine started, prewarm wired, recorder gated, Settings window fixed, `ModifierOnlyShortcut` deleted |
 | **W3 standalone .app** | ⬜ deferred, do not start |
 
-Everything builds and `xcodebuild test -only-testing:A3BBuddyTests` is green.
+All lanes merged. `build-for-testing` is green.
+
+### Left to do — all of it needs the machine, not an agent
+
+1. **Cmd+R.** Menu bar → *Dictation Settings* now opens a real window. Rebind both features.
+2. **Cmd+U.** `HotkeyStateMachineTests` + `HotkeyEngineTests` (1047 lines) have **never been executed
+   in the app.** ENGINE compiled the state machine standalone with `swiftc` and ran 53 assertions
+   plus a 4000-step randomised walk, but `xcodebuild test` launches an unsigned `com.a3b.buddy` and
+   would take the TCC grants with it (hard rule 2). Run them from Xcode.
+3. **`verification/v3-regression.md`.** The one to check hardest, in ENGINE's own words: *revoke
+   Accessibility while dictation is bound to a hold — push-to-talk must stop within 1.5 s and
+   dictation must keep recording.* That property is what the two-tap split gave away for free, and
+   it is the single thing this merge could silently lose.
+4. **Decide the `.failed` pill state** (`verification/v3-audit-report.md` §3). `RealDictationEngine`
+   holds `.failed` for 2.5 s so "failure shows on the pill briefly", but
+   `RecordingPanelController` hides the panel on `.failed`. The state is unreachable — a 2.5 s
+   window where dictation can't restart and the user sees nothing. Either give the pill a fifth
+   state or delete the sleep.
+5. **Check TCC.** Privacy & Security → Accessibility / Input Monitoring / Microphone. See the note
+   in `verification/wiring-requests/audit.md`.
+6. **Tag `v0.3`** on green.
 
 **Two corrections to §3 below, learned the hard way:**
 - `-target` **cannot** be combined with `-derivedDataPath`. Use `-scheme "a3b Buddy"` —
