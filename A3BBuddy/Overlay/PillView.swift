@@ -17,14 +17,16 @@ struct PillView<Engine: DictationEngine>: View {
     /// alongside the engine).
     @ObservedObject var controls: RecordingControls
 
-    static var capsuleHeight: CGFloat { 56 }
+    // Half the pixel-measured reference spec (see git history) — still too
+    // big at 1:1, so this treats the reference PNGs as an @2x capture.
+    static var capsuleHeight: CGFloat { 28 }
     private static var dotCount: Int { 10 }
-    private static var dotSize: CGFloat { 4 }
-    private static var dotGap: CGFloat { 4 }
+    private static var dotSize: CGFloat { 2 }
+    private static var dotGap: CGFloat { 2 }
     private static var waveformWidth: CGFloat {
         CGFloat(dotCount) * dotSize + CGFloat(dotCount - 1) * dotGap
     }
-    private static var buttonDiameter: CGFloat { 34 }
+    private static var buttonDiameter: CGFloat { 17 }
 
     /// The four visual states, collapsing `(engine.state, controls.isHandsFreeLocked)`
     /// into what the pill actually renders. Single source of truth shared with
@@ -44,15 +46,15 @@ struct PillView<Engine: DictationEngine>: View {
         }
     }
 
-    /// Measured against the reference images: 146×56 base, 204×56 hands-free
-    /// (13 pad + 34 button + 17 gap + 76 dots + 17 gap + 34 button + 13 pad),
-    /// 195×56 transcribing (38 pad + 76 dots + 17 gap + 30 spinner + 34 pad).
+    /// Half of the measured reference sizes: 73×28 base, 102×28 hands-free
+    /// (6.5 pad + 17 button + 8.5 gap + 38 dots + 8.5 gap + 17 button + 6.5 pad),
+    /// 97.5×28 transcribing (19 pad + 38 dots + 8.5 gap + 15 spinner + 17 pad).
     static func size(for layout: Layout) -> CGSize {
         switch layout {
-        case .recording(handsFree: false): return CGSize(width: 146, height: capsuleHeight)
-        case .recording(handsFree: true): return CGSize(width: 204, height: capsuleHeight)
-        case .transcribing: return CGSize(width: 195, height: capsuleHeight)
-        case .hidden: return CGSize(width: 146, height: capsuleHeight)
+        case .recording(handsFree: false): return CGSize(width: 73, height: capsuleHeight)
+        case .recording(handsFree: true): return CGSize(width: 102, height: capsuleHeight)
+        case .transcribing: return CGSize(width: 97.5, height: capsuleHeight)
+        case .hidden: return CGSize(width: 73, height: capsuleHeight)
         }
     }
 
@@ -65,7 +67,7 @@ struct PillView<Engine: DictationEngine>: View {
             .frame(width: Self.size(for: layout).width, height: Self.capsuleHeight)
             .background(.black.opacity(0.94), in: Capsule())
             .overlay(Capsule().strokeBorder(.white.opacity(0.08)))
-            .shadow(color: .black.opacity(0.35), radius: 14, y: 4)
+            .shadow(color: .black.opacity(0.35), radius: 7, y: 2)
             .animation(.easeOut(duration: DS.Animation.fast), value: layout)
     }
 
@@ -73,22 +75,22 @@ struct PillView<Engine: DictationEngine>: View {
     private var content: some View {
         switch layout {
         case .recording(handsFree: true):
-            HStack(spacing: 17) {
+            HStack(spacing: 8.5) {
                 cancelButton
                 waveform
                 confirmButton
             }
-            .padding(.horizontal, 13)
+            .padding(.horizontal, 6.5)
         case .recording(handsFree: false):
             waveform
                 .frame(maxWidth: .infinity)
         case .transcribing:
-            HStack(spacing: 17) {
+            HStack(spacing: 8.5) {
                 waveform
                 PillSpinnerView()
             }
-            .padding(.leading, 38)
-            .padding(.trailing, 34)
+            .padding(.leading, 19)
+            .padding(.trailing, 17)
         case .hidden:
             EmptyView()
         }
@@ -123,17 +125,17 @@ struct PillView<Engine: DictationEngine>: View {
     /// already reads as lively, not just its peaks.
     private func barHeight(for index: Int, date: Date) -> CGFloat {
         let phase = date.timeIntervalSinceReferenceDate * 3.6 + Double(index) * 0.35
-        let idlePulse = (sin(phase) + 1) / 2 * 1.5
+        let idlePulse = (sin(phase) + 1) / 2 * 0.75
         let normalizedLevel = max(Double(engine.audioLevel) - 0.008, 0)
         let easedLevel = pow(min(normalizedLevel * 2.85, 1), 0.76)
-        let reactive = CGFloat(easedLevel) * 21 * Self.barProfile[index]
+        let reactive = CGFloat(easedLevel) * 10.5 * Self.barProfile[index]
         return Self.dotSize + idlePulse + reactive // dotSize floor: idle dot reads as a small square, matching reference
     }
 
     private var cancelButton: some View {
         Button(action: controls.onCancel) {
             Image(systemName: "xmark")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 6.5, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .background(.white.opacity(0.28), in: Circle())
@@ -145,7 +147,7 @@ struct PillView<Engine: DictationEngine>: View {
     private var confirmButton: some View {
         Button(action: controls.onConfirm) {
             Image(systemName: "checkmark")
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(size: 6.5, weight: .bold))
                 .foregroundStyle(.black)
                 .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .background(.white, in: Circle())
@@ -159,20 +161,20 @@ struct PillView<Engine: DictationEngine>: View {
 /// 8-spoke radial activity indicator (classic spinning-wait-cursor style) —
 /// NOT `A3BBuddySpinnerView`'s single trimmed arc (OverlayWindow.swift).
 /// One fixed hue at 8 fixed opacities, the whole ring rotates as a rigid
-/// unit; measured lavender ~#877CA4, ~30pt diameter.
+/// unit; measured lavender ~#877CA4, half-scale ~15pt diameter.
 private struct PillSpinnerView: View {
     @State private var isSpinning = false
     private static let tint = Color(red: 135.0 / 255, green: 124.0 / 255, blue: 164.0 / 255)
     private static let spokeCount = 8
-    private static let diameter: CGFloat = 30
+    private static let diameter: CGFloat = 15
 
     var body: some View {
         ZStack {
             ForEach(0 ..< Self.spokeCount, id: \.self) { index in
                 Capsule()
                     .fill(Self.tint.opacity(opacity(for: index)))
-                    .frame(width: 2.5, height: 9)
-                    .offset(y: -Self.diameter / 2 + 4.5)
+                    .frame(width: 1.25, height: 4.5)
+                    .offset(y: -Self.diameter / 2 + 2.25)
                     .rotationEffect(.degrees(Double(index) / Double(Self.spokeCount) * 360))
             }
         }
