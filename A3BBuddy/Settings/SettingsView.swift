@@ -13,7 +13,7 @@ struct SettingsView: View {
     @AppStorage(PrefKey.preferredMicID) private var preferredMicID = ""
     @AppStorage(PrefKey.soundCues) private var soundCues = true
     @AppStorage(PrefKey.retention) private var retention = HistoryRetention.forever.rawValue
-    @AppStorage(PrefKey.dictationModifierOnlyShortcut) private var dictationModifierOnlyShortcut = ModifierOnlyShortcut.control.rawValue
+    @AppStorage(PrefKey.dictationModifierOnlyShortcut) private var dictationModifierOnlyShortcut = ModifierOnlyShortcut.off.rawValue
     @AppStorage(PrefKey.pushToTalkModifierOnlyShortcut) private var pushToTalkModifierOnlyShortcut = ModifierOnlyShortcut.controlOption.rawValue
 
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -21,7 +21,7 @@ struct SettingsView: View {
     @State private var inputMonitoringGranted = Permissions.inputMonitoringGranted
     @State private var acceptedDictationShortcut: KeyboardShortcuts.Shortcut?
     @State private var acceptedPushToTalkShortcut: KeyboardShortcuts.Shortcut?
-    @State private var acceptedDictationModifierOnlyShortcut = ModifierOnlyShortcut.control.rawValue
+    @State private var acceptedDictationModifierOnlyShortcut = ModifierOnlyShortcut.off.rawValue
     @State private var acceptedPushToTalkModifierOnlyShortcut = ModifierOnlyShortcut.controlOption.rawValue
     @State private var hotkeyConflictMessage: String?
     @State private var isResolvingHotkeyConflict = false
@@ -135,7 +135,7 @@ struct SettingsView: View {
     }
 
     private var selectedDictationModifierOnlyShortcut: ModifierOnlyShortcut {
-        ModifierOnlyShortcut(rawValue: dictationModifierOnlyShortcut) ?? .control
+        ModifierOnlyShortcut(rawValue: dictationModifierOnlyShortcut) ?? .off
     }
 
     private var selectedPushToTalkModifierOnlyShortcut: ModifierOnlyShortcut {
