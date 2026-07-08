@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recordingControls = RecordingControls()
     private var onboardingWindow: NSWindow?
     private var mainWindow: NSWindow?
+    private var settingsWindow: NSWindow?
 
     // MARK: a3b-buddy companion graph
 
@@ -64,6 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelController = RecordingPanelController(engine: engine, controls: recordingControls)
         applyRetention()
         wireHotkeys()
+        // Both adapters subscribe in their own init, and both are stored properties,
+        // so they are live by now. `HotkeyEngine.events` is a PassthroughSubject and
+        // drops anything sent before a subscriber exists — start it after, not in init.
+        HotkeyEngine.shared.start()
         Task { await engine.prepare() }
 
         // Companion launch work (from the former CompanionAppDelegate)
@@ -97,10 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hasTranscripts: { [store] in !(((try? store.all()) ?? []).isEmpty) },
             openMainWindow: { [weak self] in self?.openMainWindow() },
             pasteLastTranscript: { [weak self] in self?.pasteLastTranscript() },
-            openSettings: {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
+            openSettings: { [weak self] in self?.openSettingsWindow() }
         )
     }
 
@@ -125,6 +127,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         recordingControls.onCancel = { [weak self] in self?.hotkeys.cancelFromButton() }
         recordingControls.onConfirm = { [weak self] in self?.hotkeys.confirmFromButton() }
+
+        // The engine reports `armed` the instant a dictation trigger goes down, before
+        // it knows whether it's a press or the prefix of a chord (⌃ on the way to ⌃⌥).
+        // AudioRecorder has no ring buffer — samples accumulate only from start() — so
+        // the mic opens here. Silently: no pill, no cue, no state change.
+        hotkeys.onArm = { [weak self] in self?.engine.prewarmRecording() }
+        hotkeys.onDisarm = { [weak self] in self?.engine.discardPrewarm() }
     }
 
     private func saveIfRetained(_ result: DictationResult) {
@@ -141,6 +150,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func pasteLastTranscript() {
         guard let last = (try? store.all())?.first else { return }
         engine.inserter.pasteToFrontmostApp(last.text)
+    }
+
+    /// Opens dictation Settings. A plain NSWindow, for the same reason
+    /// `openMainWindow()` is one.
+    ///
+    /// This used to be `NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, …)`,
+    /// which never opened anything. `sendAction(to: nil)` resolves its target by
+    /// walking the key window's responder chain — and we are an LSUIElement app
+    /// being clicked from a `.nonactivatingPanel`, so there is no key window and
+    /// the app is not active. The action found no target and silently returned
+    /// false. Activating afterwards was too late. (The selector itself is alive
+    /// and well on macOS 26; the call site was the bug.)
+    ///
+    /// Hosting the view ourselves also gets the hotkey recorder a window that can
+    /// become key, which a non-activating panel never can.
+    func openSettingsWindow() {
+        if settingsWindow == nil {
+            let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
+            window.title = "Buddy Settings"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.center()
+            settingsWindow = window
+        }
+        settingsWindow?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// Opens the Whisper history/insights window. Hosted as a plain NSWindow

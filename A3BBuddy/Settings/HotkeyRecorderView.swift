@@ -64,11 +64,25 @@ final class HotkeyRecorderNSView: NSView {
     private var placeholder: String
     private var onFeedback: (HotkeyRecorderFeedback?) -> Void
 
+    /// Single choke point for the engine gate. Without it, recording a bare ⌃⇧
+    /// starts a dictation behind the Settings window, and recording ⌘⇧D fires
+    /// whatever owns that combo — Carbon consumes the key before any responder
+    /// sees it. `suspend()` stops matching and unregisters the combos; it
+    /// deliberately leaves the event tap alone.
     private var isRecording = false {
-        didSet { needsDisplay = true }
+        didSet {
+            guard isRecording != oldValue else { return }
+            needsDisplay = true
+            if isRecording {
+                HotkeyEngine.shared.suspend()
+            } else {
+                HotkeyEngine.shared.resume()
+            }
+        }
     }
     private var maximalModifierSet = NSEvent.ModifierFlags()
     private var sawKeyDownDuringRecording = false
+    private var windowCloseObserver: NSObjectProtocol?
 
     init(
         store: HotkeyBindingStore,
@@ -129,6 +143,30 @@ final class HotkeyRecorderNSView: NSView {
             cancelRecording()
         }
         return super.resignFirstResponder()
+    }
+
+    /// Closing the Settings window while recording must not strand the engine in
+    /// `suspend()` — every hotkey would stay dead until relaunch. `orderOut` does
+    /// not change the first responder, so `resignFirstResponder` never fires, and
+    /// the window is `isReleasedWhenClosed = false` so the view survives too.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let windowCloseObserver {
+            NotificationCenter.default.removeObserver(windowCloseObserver)
+            self.windowCloseObserver = nil
+        }
+        guard let window else {
+            if isRecording { cancelRecording() }
+            return
+        }
+        windowCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isRecording else { return }
+                self.cancelRecording()
+            }
+        }
     }
 
     override func flagsChanged(with event: NSEvent) {
