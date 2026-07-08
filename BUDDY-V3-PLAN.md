@@ -14,6 +14,34 @@ Three asks drive this wave:
 
 ---
 
+## STATUS (live)
+
+| Lane | State |
+|---|---|
+| **W0 foundation** | ✅ merged — `5107e98` |
+| **RECORDER** | ✅ merged — landed with W0 (`HotkeyRecorderView` + `SettingsView`) |
+| **AUDIT** | ✅ merged — `979417f`; stale copy applied, wiring request resolved |
+| **PILL** | ✅ merged — `9d58c7e` (four states, geometry trap fixed) |
+| **ENGINE** | ⬜ **the only lane left.** Worktree `../buddy-engine` is realigned onto `9d58c7e`. Brief: `docs/hotkey-engine-design.md` |
+| **W3 standalone .app** | ⬜ deferred, do not start |
+
+Everything builds and `xcodebuild test -only-testing:A3BBuddyTests` is green.
+
+**Two corrections to §3 below, learned the hard way:**
+- `-target` **cannot** be combined with `-derivedDataPath`. Use `-scheme "a3b Buddy"` —
+  `xcodebuild` autocreates the scheme even in a fresh worktree (verified).
+- `SWIFT_VERSION = 5.0` and `SWIFT_STRICT_CONCURRENCY` is unset (`minimal`). There is
+  no Swift 6 strict concurrency here; don't plan around diagnostics that won't appear.
+
+**A temporary shim exists.** `Hotkey/HotkeyBindingBridge.swift` points the two old
+matchers at `HotkeyBindingStore`, because Settings now edits the store while
+`HotkeyManager` / `GlobalPushToTalkShortcutMonitor` still read the legacy
+`ModifierOnlyShortcut` keys. Without it, rebinding a hotkey does nothing —
+the exact bug this wave exists to fix. **ENGINE deletes it**, along with
+`ModifierOnlyShortcut` in `Settings/Prefs.swift`.
+
+---
+
 ## 0. Two findings that shape everything
 
 ### 0.1 The dictation hotkey is actively broken, not merely inflexible

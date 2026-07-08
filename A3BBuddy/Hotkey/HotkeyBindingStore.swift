@@ -45,15 +45,30 @@ struct NullCarbonRegistrar: HotkeyCarbonRegistrar {
 
 @MainActor
 final class HotkeyBindingStore: ObservableObject {
-    static let shared = HotkeyBindingStore()
+    /// The test bundle is hosted *inside* the app (`TEST_HOST` in project.pbxproj),
+    /// so `xcodebuild test` runs `applicationDidFinishLaunching`, which touches
+    /// `.shared`. Left unguarded that migrates the developer's real
+    /// `com.a3b.buddy` preferences and calls `RegisterEventHotKey` for real —
+    /// a test run silently rewriting the user's hotkeys and binding them
+    /// system-wide. Under XCTest, seed from defaults and register nothing.
+    /// Unit tests construct their own store with an explicit suite anyway.
+    private static var isRunningTests: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || NSClassFromString("XCTestCase") != nil
+    }
+
+    static let shared = HotkeyBindingStore(
+        carbon: isRunningTests ? NullCarbonRegistrar() : KeyboardShortcutsCarbonRegistrar(),
+        runningMigration: !isRunningTests
+    )
 
     @Published private(set) var bindings: [HotkeyFeature: [HotkeyBinding]] = [:]
 
-    private let defaults: UserDefaults
+    private let defaults: HotkeyDefaults
     private let carbon: HotkeyCarbonRegistrar
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: HotkeyDefaults = UserDefaults.standard,
         carbon: HotkeyCarbonRegistrar = KeyboardShortcutsCarbonRegistrar(),
         runningMigration: Bool = true
     ) {
@@ -155,7 +170,7 @@ final class HotkeyBindingStore: ObservableObject {
     /// Shared with HotkeyMigration, which writes before any store exists.
     /// `nonisolated` because a `static func` on a `@MainActor` class would
     /// otherwise be MainActor-isolated, and migration's helpers are not.
-    nonisolated static func write(_ bindings: [HotkeyBinding], to key: String, in defaults: UserDefaults) {
+    nonisolated static func write(_ bindings: [HotkeyBinding], to key: String, in defaults: HotkeyDefaults) {
         guard let data = try? JSONEncoder().encode(bindings) else {
             NSLog("Whisper: could not encode hotkey bindings for \(key)")
             return
@@ -163,7 +178,7 @@ final class HotkeyBindingStore: ObservableObject {
         defaults.set(data, forKey: key)
     }
 
-    nonisolated static func read(from key: String, in defaults: UserDefaults) -> [HotkeyBinding]? {
+    nonisolated static func read(from key: String, in defaults: HotkeyDefaults) -> [HotkeyBinding]? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode([HotkeyBinding].self, from: data)
     }

@@ -51,8 +51,8 @@ enum HotkeyMigration {
     /// `@MainActor` because the default implementation is.
     @MainActor
     static func runIfNeeded(
-        defaults: UserDefaults = .standard,
-        legacyCombo: @MainActor (HotkeyFeature, UserDefaults) -> LegacyCombo = readLegacyCombo
+        defaults: HotkeyDefaults = UserDefaults.standard,
+        legacyCombo: @MainActor (HotkeyFeature, HotkeyDefaults) -> LegacyCombo = readLegacyCombo
     ) {
         let installedVersion = defaults.integer(forKey: PrefKey.hotkeyMigrationVersion)
         guard installedVersion < currentVersion else { return }
@@ -77,7 +77,7 @@ enum HotkeyMigration {
     /// default fills in. Absent ≠ off: `"off"` is a choice and stays a choice.
     static func migrate(
         _ feature: HotkeyFeature,
-        defaults: UserDefaults,
+        defaults: HotkeyDefaults,
         legacyCombo: LegacyCombo
     ) {
         guard defaults.object(forKey: feature.defaultsKey) == nil else { return }
@@ -135,7 +135,7 @@ enum HotkeyMigration {
     /// combo slot. Reads the raw key first: `getShortcut(for:)` returns nil both
     /// for "never set" and "cleared", and those two want different outcomes.
     @MainActor
-    static func readLegacyCombo(_ feature: HotkeyFeature, _ defaults: UserDefaults) -> LegacyCombo {
+    static func readLegacyCombo(_ feature: HotkeyFeature, _ defaults: HotkeyDefaults) -> LegacyCombo {
         guard let name = feature.comboShortcutNames.first else { return .neverSet }
         guard defaults.object(forKey: "KeyboardShortcuts_\(name.rawValue)") != nil else { return .neverSet }
         guard let shortcut = KeyboardShortcuts.getShortcut(for: name) else { return .clearedByUser }
@@ -146,7 +146,7 @@ enum HotkeyMigration {
     /// `HotkeyConflictChecker`. A user who had set the old dictation dropdown to
     /// ⌃⌥ would land here holding push-to-talk's binding, and both features
     /// would fire on every press. Give dictation its default back instead.
-    static func separateDuplicateHolds(defaults: UserDefaults) {
+    static func separateDuplicateHolds(defaults: HotkeyDefaults) {
         let dictation = HotkeyBindingStore.read(from: PrefKey.dictationBinding, in: defaults) ?? []
         let pushToTalk = HotkeyBindingStore.read(from: PrefKey.pushToTalkBinding, in: defaults) ?? []
 
@@ -172,7 +172,7 @@ enum HotkeyMigration {
         .keyCombo(keyCode: UInt16(kVK_Space), modifiers: .option),
     ]
 
-    static func retireCollidingDictationHold(defaults: UserDefaults) {
+    static func retireCollidingDictationHold(defaults: HotkeyDefaults) {
         let stored = HotkeyBindingStore.read(from: PrefKey.dictationBinding, in: defaults)
         guard stored == version1DictationDefault else { return }
 
