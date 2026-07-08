@@ -1,10 +1,13 @@
 //
 //  AppDelegate.swift
-//  Whisper — integration layer
+//  a3b Buddy — integration layer
 //
-//  Owns the object graph: engine, store, stats, pill panel, onboarding.
-//  ActiveEngine is the one line that flips from mock to real when
-//  Workstream A lands.
+//  Owns the whole object graph for both halves of the app:
+//    Whisper  — dictation engine, history store, stats, pill panel, onboarding
+//    Clicky   — companion manager, menu bar panel, cursor overlay
+//
+//  This is the merge point of what used to be two separate `@main`s
+//  (`WhisperApp` + `leanring_buddyApp`/`CompanionAppDelegate`).
 //
 
 import AppKit
@@ -29,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return try SwiftDataStore()
         } catch {
             // App still works for the session; history just won't persist.
-            NSLog("Whisper: SwiftData container failed (\(error)) — using in-memory store")
+            NSLog("a3b Buddy: SwiftData container failed (\(error)) — using in-memory store")
             return MockDictationStore(seeded: false)
         }
     }()
@@ -41,14 +44,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: RecordingPanelController<ActiveEngine>?
     private var onboardingWindow: NSWindow?
 
+    // MARK: Clicky (companion)
+
+    let companionManager = CompanionManager()
+    private var menuBarPanelManager: MenuBarPanelManager?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Clicky reads this to make its tooltips appear instantly.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
+
+        ClickyAnalytics.configure()
+        ClickyAnalytics.trackAppOpened()
+
+        // The main window is AppKit-owned; hand it the object graph.
+        MainWindowController.shared.makeContentView = { [store, stats] in
+            AnyView(MainWindowView(store: store, stats: stats))
+        }
+
+        // Whisper
         panelController = RecordingPanelController(engine: engine)
         applyRetention()
+        refreshHasTranscripts()
         wireHotkeys()
         Task { await engine.prepare() }
+
+        // Clicky — the single menu bar item lives here.
+        menuBarPanelManager = MenuBarPanelManager(companionManager: companionManager)
+        companionManager.start()
+        if !companionManager.hasCompletedOnboarding || !companionManager.allPermissionsGranted {
+            menuBarPanelManager?.showPanelOnLaunch()
+        }
+
         if !UserDefaults.standard.bool(forKey: PrefKey.hasOnboarded) {
             showOnboarding()
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        companionManager.stop()
+    }
+
+    // MARK: Menu bar panel actions (Whisper half)
+
+    func openMainWindow() {
+        MainWindowController.shared.show()
+    }
+
+    func openSettings() {
+        SettingsWindowController.shared.show()
+    }
+
+    /// Cached, not computed. The menu bar panel reads this from its `body`, and
+    /// the panel re-renders on every audio-power-level tick while Clicky is
+    /// listening — a SwiftData fetch there would run dozens of times a second.
+    private(set) var hasTranscripts = false
+
+    private func refreshHasTranscripts() {
+        hasTranscripts = !((try? store.all())?.isEmpty ?? true)
     }
 
     // MARK: Hotkey → engine → store
@@ -74,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) ?? .forever
         guard retention != .off else { return }
         try? store.save(result)
+        hasTranscripts = true
         NotificationCenter.default.post(name: .dictationDidSave, object: nil)
     }
 
@@ -115,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-        window.title = "Welcome to Whisper"
+        window.title = "Welcome to a3b Buddy"
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false

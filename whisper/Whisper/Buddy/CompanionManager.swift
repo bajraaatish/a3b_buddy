@@ -70,7 +70,14 @@ final class CompanionManager: ObservableObject {
 
     /// Base URL for the Cloudflare Worker proxy. All API requests route
     /// through this so keys never ship in the app binary.
-    private static let workerBaseURL = "https://your-worker-name.your-subdomain.workers.dev"
+    ///
+    /// Read from the `WorkerBaseURL` Info.plist key (set via the
+    /// `INFOPLIST_KEY_WorkerBaseURL` build setting) rather than hardcoded, so a
+    /// deployed worker can be pointed at without a source change. Empty until
+    /// one is configured — Clicky's Claude / TTS / transcription-token calls
+    /// will fail until then. Whisper's dictation is local and unaffected.
+    private static let workerBaseURL: String =
+        AppBundleConfiguration.stringValue(forKey: "WorkerBaseURL") ?? ""
 
     private lazy var claudeAPI: ClaudeAPI = {
         return ClaudeAPI(proxyURL: "\(Self.workerBaseURL)/chat", model: selectedModel)

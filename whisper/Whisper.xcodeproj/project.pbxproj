@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		AA10000129AA000000000001 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000329AA000000000003 /* WhisperKit */; };
 		AA10000229AA000000000002 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000429AA000000000004 /* KeyboardShortcuts */; };
+		AA10000729AA000000000007 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000929AA000000000009 /* Sparkle */; };
+		AA10000829AA000000000008 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = AA10001029AA000000000010 /* PostHog */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,7 +31,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		F9CFB16A2FFA96D300745676 /* Whisper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Whisper.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F9CFB16A2FFA96D300745676 /* a3b Buddy.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "a3b Buddy.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9CFB1772FFA96D400745676 /* WhisperTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F9CFB1812FFA96D400745676 /* WhisperUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WhisperUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -59,6 +61,8 @@
 			files = (
 				AA10000129AA000000000001 /* WhisperKit in Frameworks */,
 				AA10000229AA000000000002 /* KeyboardShortcuts in Frameworks */,
+				AA10000729AA000000000007 /* Sparkle in Frameworks */,
+				AA10000829AA000000000008 /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -92,7 +96,7 @@
 		F9CFB16B2FFA96D300745676 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				F9CFB16A2FFA96D300745676 /* Whisper.app */,
+				F9CFB16A2FFA96D300745676 /* a3b Buddy.app */,
 				F9CFB1772FFA96D400745676 /* WhisperTests.xctest */,
 				F9CFB1812FFA96D400745676 /* WhisperUITests.xctest */,
 			);
@@ -121,9 +125,11 @@
 			packageProductDependencies = (
 				AA10000329AA000000000003 /* WhisperKit */,
 				AA10000429AA000000000004 /* KeyboardShortcuts */,
+				AA10000929AA000000000009 /* Sparkle */,
+				AA10001029AA000000000010 /* PostHog */,
 			);
 			productName = Whisper;
-			productReference = F9CFB16A2FFA96D300745676 /* Whisper.app */;
+			productReference = F9CFB16A2FFA96D300745676 /* a3b Buddy.app */;
 			productType = "com.apple.product-type.application";
 		};
 		F9CFB1762FFA96D400745676 /* WhisperTests */ = {
@@ -207,6 +213,8 @@
 			packageReferences = (
 				AA10000529AA000000000005 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 				AA10000629AA000000000006 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
+				AA10001129AA000000000011 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				AA10001229AA000000000012 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F9CFB16B2FFA96D300745676 /* Products */;
@@ -298,6 +306,22 @@
 				minimumVersion = 2.0.0;
 			};
 		};
+		AA10001129AA000000000011 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.0;
+			};
+		};
+		AA10001229AA000000000012 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/PostHog/posthog-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -310,6 +334,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA10000629AA000000000006 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
 			productName = KeyboardShortcuts;
+		};
+		AA10000929AA000000000009 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA10001129AA000000000011 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		AA10001029AA000000000010 /* PostHog */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA10001229AA000000000012 /* XCRemoteSwiftPackageReference "posthog-ios" */;
+			productName = PostHog;
 		};
 /* End XCSwiftPackageProductDependency section */
 
@@ -444,7 +478,12 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisper listens while you hold the hotkey and transcribes locally. Audio never leaves this Mac.";
+				INFOPLIST_KEY_CFBundleDisplayName = "a3b Buddy";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "a3b Buddy listens while you hold a hotkey — to transcribe your speech locally, and to talk to Clicky.";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Clicky looks at your screen so it can point at what you are asking about.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Used to transcribe what you say to Clicky.";
+				INFOPLIST_KEY_VoiceTranscriptionProvider = assemblyai;
+				INFOPLIST_KEY_WorkerBaseURL = "";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -458,10 +497,10 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aatish.Whisper;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.a3b.buddy;
+				PRODUCT_NAME = "a3b Buddy";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -490,7 +529,12 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Whisper listens while you hold the hotkey and transcribes locally. Audio never leaves this Mac.";
+				INFOPLIST_KEY_CFBundleDisplayName = "a3b Buddy";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "a3b Buddy listens while you hold a hotkey — to transcribe your speech locally, and to talk to Clicky.";
+				INFOPLIST_KEY_NSScreenCaptureUsageDescription = "Clicky looks at your screen so it can point at what you are asking about.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Used to transcribe what you say to Clicky.";
+				INFOPLIST_KEY_VoiceTranscriptionProvider = assemblyai;
+				INFOPLIST_KEY_WorkerBaseURL = "";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -504,10 +548,10 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.aatish.Whisper;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.a3b.buddy;
+				PRODUCT_NAME = "a3b Buddy";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -531,7 +575,7 @@
 				DEVELOPMENT_TEAM = 9MK28422U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aatish.WhisperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -543,7 +587,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Whisper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Whisper";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/a3b Buddy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/a3b Buddy";
 				XROS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Debug;
@@ -557,7 +601,7 @@
 				DEVELOPMENT_TEAM = 9MK28422U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aatish.WhisperTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -569,7 +613,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Whisper.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Whisper";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/a3b Buddy.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/a3b Buddy";
 				XROS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Release;
@@ -582,7 +626,7 @@
 				DEVELOPMENT_TEAM = 9MK28422U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aatish.WhisperUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -607,7 +651,7 @@
 				DEVELOPMENT_TEAM = 9MK28422U2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.2;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.aatish.WhisperUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";

@@ -1,56 +1,32 @@
 //
 //  WhisperApp.swift
-//  Whisper
+//  a3b Buddy
 //
 //  Created by Aatish Bajracharya on 5/7/2026.
+//
+//  There is deliberately no `MenuBarExtra` and no `Window` scene here.
+//
+//  The single menu bar surface is Clicky's `NSStatusItem` + floating panel
+//  (`MenuBarPanelManager`), created by the AppDelegate. Its SwiftUI content is
+//  hosted in an `NSHostingView` *outside* the Scene graph, which means
+//  `@Environment(\.openWindow)` silently no-ops in there and `SettingsLink` has
+//  no scene to route to. So both real windows — the main history/insights
+//  window and Settings — are owned by AppKit window controllers that anything
+//  can reach.
+//
+//  SwiftUI still requires at least one scene. `Settings` is the cheapest one,
+//  and it buys a working ⌘, whenever one of our windows is key.
 //
 
 import SwiftUI
 
 @main
-struct WhisperApp: App {
+struct A3BBuddyApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var app
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarContent(
-                engine: app.engine,
-                store: app.store,
-                onPasteLast: { app.pasteLastTranscript() }
-            )
-            #if DEBUG
-            Divider()
-            Button("Demo Dictation (records 3 s)") { app.demoDictation() }
-            #endif
-        } label: {
-            MenuBarLabel(engine: app.engine)
-        }
-
-        Window("Whisper", id: WindowID.main) {
-            MainWindowView(store: app.store, stats: app.stats)
-        }
-        .defaultSize(width: 860, height: 600)
-
         Settings {
             SettingsView()
-        }
-    }
-}
-
-/// Menu bar icon that tracks engine state.
-private struct MenuBarLabel<Engine: DictationEngine>: View {
-    @ObservedObject var engine: Engine
-
-    var body: some View {
-        Image(systemName: icon)
-    }
-
-    private var icon: String {
-        switch engine.state {
-        case .idle: "mic.fill"
-        case .recording: "waveform"
-        case .transcribing: "ellipsis"
-        case .failed: "mic.slash.fill"
         }
     }
 }

@@ -73,6 +73,14 @@ struct CompanionPanelView: View {
                 .background(DS.Colors.borderSubtle)
                 .padding(.horizontal, 16)
 
+            whisperSection
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+            Divider()
+                .background(DS.Colors.borderSubtle)
+                .padding(.horizontal, 16)
+
             footerSection
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -680,6 +688,71 @@ struct CompanionPanelView: View {
 
     // MARK: - Footer
 
+    // MARK: - Whisper (dictation) actions
+
+    /// This section replaces the `MenuBarExtra` menu that Whisper used to own.
+    /// The merged app has one menu bar item — this panel — so Whisper's actions
+    /// live here. `appDelegate` is looked up rather than injected because the
+    /// panel is constructed by `MenuBarPanelManager`, which only knows about
+    /// `CompanionManager`.
+    private var appDelegate: AppDelegate? {
+        NSApp.delegate as? AppDelegate
+    }
+
+    private var whisperSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("DICTATION")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(DS.Colors.textTertiary)
+                .tracking(0.5)
+
+            panelActionRow(iconName: "macwindow", title: "Open a3b Buddy") {
+                appDelegate?.openMainWindow()
+                NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+            }
+
+            panelActionRow(
+                iconName: "doc.on.clipboard",
+                title: "Paste Last Transcript",
+                isEnabled: appDelegate?.hasTranscripts ?? false
+            ) {
+                appDelegate?.pasteLastTranscript()
+                NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+            }
+
+            panelActionRow(iconName: "gearshape", title: "Settings…") {
+                appDelegate?.openSettings()
+                NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func panelActionRow(
+        iconName: String,
+        title: String,
+        isEnabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: iconName)
+                    .font(.system(size: 11, weight: .medium))
+                    .frame(width: 14)
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+            }
+            .foregroundColor(isEnabled ? DS.Colors.textSecondary : DS.Colors.textTertiary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .pointerCursor(isEnabled: isEnabled)
+    }
+
+    // MARK: - Footer
+
     private var footerSection: some View {
         HStack {
             Button(action: {
@@ -688,7 +761,7 @@ struct CompanionPanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
                         .font(.system(size: 11, weight: .medium))
-                    Text("Quit Clicky")
+                    Text("Quit a3b Buddy")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(DS.Colors.textTertiary)
