@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     private var panelController: RecordingPanelController<ActiveEngine>?
+    private let recordingControls = RecordingControls()
     private var onboardingWindow: NSWindow?
     private var mainWindow: NSWindow?
 
@@ -53,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Whisper launch work
-        panelController = RecordingPanelController(engine: engine)
+        panelController = RecordingPanelController(engine: engine, controls: recordingControls)
         applyRetention()
         wireHotkeys()
         Task { await engine.prepare() }
@@ -111,6 +112,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeys.onCancel = { [weak self] in
             self?.engine.cancel()
         }
+        // Hands-free lock ↔ the recording pill's ✕/✓ buttons.
+        hotkeys.onLockChange = { [weak self] locked in
+            self?.recordingControls.isHandsFreeLocked = locked
+        }
+        recordingControls.onCancel = { [weak self] in self?.hotkeys.cancelFromButton() }
+        recordingControls.onConfirm = { [weak self] in self?.hotkeys.confirmFromButton() }
     }
 
     private func saveIfRetained(_ result: DictationResult) {
@@ -135,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if mainWindow == nil {
             let view = MainWindowView(store: store, stats: stats)
             let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-            window.title = "a3b Buddy"
+            window.title = "Buddy"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: 860, height: 600))
             window.isReleasedWhenClosed = false
@@ -194,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
-        window.title = "Welcome to a3b Buddy"
+        window.title = "Welcome to Buddy"
         window.styleMask = [.titled, .closable, .fullSizeContentView]
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false

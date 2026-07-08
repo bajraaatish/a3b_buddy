@@ -61,6 +61,7 @@ struct ModifierOnlyShortcut: RawRepresentable, CaseIterable, Identifiable, Hasha
     }()
 
     private static let offRawValue = "off"
+    private static let modifierOnlyFlagMask: NSEvent.ModifierFlags = [.control, .command, .option, .shift, .function]
     private static let modifierDefinitions: [ModifierDefinition] = [
         .init(rawValue: "control", displayName: "Control", symbol: "⌃", keyLabel: "ctrl", flag: .control),
         .init(rawValue: "option", displayName: "Option", symbol: "⌥", keyLabel: "option", flag: .option),
@@ -103,6 +104,22 @@ struct ModifierOnlyShortcut: RawRepresentable, CaseIterable, Identifiable, Hasha
         return definitions.reduce(into: NSEvent.ModifierFlags()) { flags, definition in
             flags.insert(definition.flag)
         }
+    }
+
+    enum MatchState {
+        case off
+        case released
+        case exact
+        case superset
+    }
+
+    func matchState(in rawFlags: NSEvent.ModifierFlags) -> MatchState {
+        guard let flags else { return .off }
+
+        let modifierFlags = rawFlags.intersection(Self.modifierOnlyFlagMask)
+        guard modifierFlags.isSuperset(of: flags) else { return .released }
+
+        return modifierFlags == flags ? .exact : .superset
     }
 
     var displayName: String {

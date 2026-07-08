@@ -14,14 +14,22 @@ import Combine
 @MainActor
 final class RecordingPanelController<Engine: DictationEngine> {
     private let engine: Engine
+    private let controls: RecordingControls
     private var panel: NSPanel?
     private var cancellable: AnyCancellable?
+    private var lockCancellable: AnyCancellable?
 
-    init(engine: Engine) {
+    init(engine: Engine, controls: RecordingControls) {
         self.engine = engine
+        self.controls = controls
         // objectWillChange fires pre-mutation; hop to the next runloop tick to read the new state.
         cancellable = engine.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.sync() }
+        }
+        // While hands-free-locked the pill shows ✕/✓ buttons, so the panel must
+        // accept clicks; otherwise it stays fully click-through (never steals focus).
+        lockCancellable = controls.$isHandsFreeLocked.sink { [weak self] locked in
+            self?.panel?.ignoresMouseEvents = !locked
         }
     }
 
@@ -60,9 +68,9 @@ final class RecordingPanelController<Engine: DictationEngine> {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false // PillView draws its own soft shadow
-        panel.ignoresMouseEvents = true
+        panel.ignoresMouseEvents = !controls.isHandsFreeLocked
         panel.hidesOnDeactivate = false
-        panel.contentView = NSHostingView(rootView: PillView(engine: engine))
+        panel.contentView = NSHostingView(rootView: PillView(engine: engine, controls: controls))
         return panel
     }
 

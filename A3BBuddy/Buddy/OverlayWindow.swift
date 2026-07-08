@@ -10,6 +10,30 @@
 import AppKit
 import SwiftUI
 
+private extension View {
+    func buddyCursorGlow(intensity: CGFloat = 1.0, radiusBoost: CGFloat = 0) -> some View {
+        self
+            .shadow(
+                color: DS.Colors.overlayCursorWine.opacity(0.78 * intensity),
+                radius: 4 + radiusBoost * 0.4,
+                x: 0,
+                y: 0
+            )
+            .shadow(
+                color: DS.Colors.overlayCursorWine.opacity(0.42 * intensity),
+                radius: 10 + radiusBoost * 0.7,
+                x: 0,
+                y: 0
+            )
+            .shadow(
+                color: DS.Colors.overlayCursorWine.opacity(0.24 * intensity),
+                radius: 18 + radiusBoost,
+                x: 0,
+                y: 0
+            )
+    }
+}
+
 class OverlayWindow: NSWindow {
     init(screen: NSScreen) {
         // Create window covering entire screen
@@ -146,7 +170,7 @@ struct A3BBuddyOverlayView: View {
     /// Only during the return flight can cursor movement cancel the animation.
     @State private var isReturningToCursor: Bool = false
 
-    private let fullWelcomeMessage = "hey! i'm a3b-buddy"
+    private let fullWelcomeMessage = "hey! i'm buddy"
 
     private let navigationPointerPhrases = [
         "right here!",
@@ -172,7 +196,7 @@ struct A3BBuddyOverlayView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(DS.Colors.overlayCursorWine)
-                            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.5), radius: 6, x: 0, y: 0)
+                            .buddyCursorGlow(intensity: 0.72)
                     )
                     .fixedSize()
                     .overlay(
@@ -200,7 +224,7 @@ struct A3BBuddyOverlayView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
                             .fill(DS.Colors.overlayCursorWine)
-                            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.5), radius: 6, x: 0, y: 0)
+                            .buddyCursorGlow(intensity: 0.72)
                     )
                     .fixedSize()
                     .overlay(
@@ -274,11 +298,9 @@ struct A3BBuddyOverlayView: View {
                 // arrow aims 90° clockwise off and appears to point at the UI
                 // element next to the real target.
                 .rotationEffect(.degrees(triangleRotationDegrees - 90))
-                .shadow(
-                    color: DS.Colors.overlayCursorWine.opacity(0.65),
-                    radius: 8 + (buddyFlightScale - 1.0) * 18,
-                    x: 0,
-                    y: 0
+                .buddyCursorGlow(
+                    intensity: 1.0,
+                    radiusBoost: (buddyFlightScale - 1.0) * 18
                 )
                 .scaleEffect(buddyFlightScale)
                 .opacity(buddyIsVisibleOnThisScreen && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
@@ -700,7 +722,7 @@ private struct A3BBuddyWaveformView: View {
                         )
                 }
             }
-            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.6), radius: 6, x: 0, y: 0)
+            .buddyCursorGlow(intensity: 0.9)
             .animation(.linear(duration: 0.08), value: audioPowerLevel)
         }
     }
@@ -737,7 +759,7 @@ private struct A3BBuddySpinnerView: View {
             )
             .frame(width: 14, height: 14)
             .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.6), radius: 6, x: 0, y: 0)
+            .buddyCursorGlow(intensity: 0.9)
             .onAppear {
                 withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
                     isSpinning = true

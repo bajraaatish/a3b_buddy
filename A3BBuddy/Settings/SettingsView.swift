@@ -48,7 +48,7 @@ struct SettingsView: View {
 
                 Divider()
 
-                KeyboardShortcuts.Recorder("Push-to-talk (Clicky)", name: .pushToTalk)
+                KeyboardShortcuts.Recorder("Push-to-talk (Buddy)", name: .pushToTalk)
 
                 Picker("Push-to-talk modifier hold", selection: $pushToTalkModifierOnlyShortcut) {
                     ForEach(ModifierOnlyShortcut.allCases) { shortcut in
@@ -72,8 +72,9 @@ struct SettingsView: View {
                             Permissions.requestInputMonitoring()
                             Permissions.openInputMonitoringSettings()
                         }
+                        .pointerCursor()
                     }
-                    Text("macOS needs Input Monitoring for modifier-only hotkeys in other apps. Grant it, then quit and reopen a3b Buddy.")
+                    Text("macOS needs Input Monitoring for modifier-only hotkeys in other apps. Grant it, then quit and reopen Buddy.")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -158,10 +159,10 @@ struct SettingsView: View {
     private var pushToTalkHotkeyHelpText: String {
         let shortcut = selectedPushToTalkModifierOnlyShortcut
         guard shortcut != .off else {
-            return "Hold the push-to-talk combo to talk to Clicky, release to send."
+            return "Hold the push-to-talk combo to talk to Buddy, release to send."
         }
 
-        return "Hold \(shortcut.symbol) to talk to Clicky, release to send."
+        return "Hold \(shortcut.symbol) to talk to Buddy, release to send."
     }
 
     private func cacheAcceptedKeyboardShortcuts() {
@@ -200,7 +201,7 @@ struct SettingsView: View {
         switch changedOwner {
         case .dictation:
             KeyboardShortcuts.setShortcut(acceptedDictationShortcut, for: .dictation)
-            hotkeyConflictMessage = "Push-to-talk (Clicky) already uses that shortcut. Choose a different combo for dictation."
+            hotkeyConflictMessage = "Push-to-talk (Buddy) already uses that shortcut. Choose a different combo for dictation."
         case .pushToTalk:
             KeyboardShortcuts.setShortcut(acceptedPushToTalkShortcut, for: .pushToTalk)
             hotkeyConflictMessage = "Dictation (Whisper) already uses that shortcut. Choose a different combo for push-to-talk."
@@ -231,7 +232,7 @@ struct SettingsView: View {
         switch owner {
         case .dictation:
             dictationModifierOnlyShortcut = acceptedDictationModifierOnlyShortcut
-            hotkeyConflictMessage = "Push-to-talk (Clicky) already uses that modifier hold. Choose a different modifier hold for dictation."
+            hotkeyConflictMessage = "Push-to-talk (Buddy) already uses that modifier hold. Choose a different modifier hold for dictation."
         case .pushToTalk:
             pushToTalkModifierOnlyShortcut = acceptedPushToTalkModifierOnlyShortcut
             hotkeyConflictMessage = "Dictation (Whisper) already uses that modifier hold. Choose a different modifier hold for push-to-talk."

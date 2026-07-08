@@ -24,11 +24,12 @@ import KeyboardShortcuts
 
 @MainActor
 final class HotkeyManager {
-    private static let modifierOnlyFlagMask: NSEvent.ModifierFlags = [.control, .command, .option, .shift, .function]
-
     var onStartRecording: () -> Void = {}
     var onStopAndTranscribe: () -> Void = {}
     var onCancel: () -> Void = {}
+    /// Fired when hands-free lock engages/disengages, so the recording pill can
+    /// show its ✕/✓ buttons and its panel can accept mouse events while locked.
+    var onLockChange: (Bool) -> Void = { _ in }
 
     /// A press shorter than this is a "tap"; a second tap within the same
     /// window locks hands-free recording.
@@ -36,7 +37,11 @@ final class HotkeyManager {
     private let maxDuration: TimeInterval = 5 * 60
 
     private var isActive = false
-    private var isLocked = false
+    private var isLocked = false {
+        didSet {
+            if isLocked != oldValue { onLockChange(isLocked) }
+        }
+    }
     private var pressStartedAt: Date?
     private var tapDeadline: Date?
     private var maxDurationTimer: Timer?
@@ -206,30 +211,28 @@ final class HotkeyManager {
     // MARK: Modifier-only hold state
 
     private func handleFlagsChanged(_ raw: NSEvent.ModifierFlags) {
-        guard let holdFlags = currentModifierOnlyShortcut.flags else { return }
-
-        let mods = raw.intersection(Self.modifierOnlyFlagMask)
-        let hasEntireShortcut = mods.isSuperset(of: holdFlags)
-        let exactShortcut = mods == holdFlags
-
-        if !hasEntireShortcut {
+        switch currentModifierOnlyShortcut.matchState(in: raw) {
+        case .off:
+            return
+        case .released:
             releaseHoldShortcutIfNeeded()
             holdSuppressedUntilReleased = false
-            return
-        }
-
-        guard !holdSuppressedUntilReleased else { return }
-
-        if exactShortcut, !holdShortcutDown {
-            holdShortcutDown = true
-            holdPressed()
-        } else if holdShortcutDown, !exactShortcut {
-            // Another modifier joined mid-hold — it's a shortcut, not dictation.
-            holdShortcutDown = false
-            holdSuppressedUntilReleased = true
-            if holdSessionActive, !isLocked { cancel() }
-        } else if !exactShortcut {
-            holdSuppressedUntilReleased = true
+        case .exact:
+            guard !holdSuppressedUntilReleased else { return }
+            if !holdShortcutDown {
+                holdShortcutDown = true
+                holdPressed()
+            }
+        case .superset:
+            guard !holdSuppressedUntilReleased else { return }
+            if holdShortcutDown {
+                // Another modifier joined mid-hold — it's a shortcut, not dictation.
+                holdShortcutDown = false
+                holdSuppressedUntilReleased = true
+                if holdSessionActive, !isLocked { cancel() }
+            } else {
+                holdSuppressedUntilReleased = true
+            }
         }
     }
 
@@ -307,6 +310,18 @@ final class HotkeyManager {
         guard isActive else { return }
         reset()
         onCancel()
+    }
+
+    // MARK: Hands-free pill buttons
+
+    /// ✕ in the hands-free pill — discard the in-progress recording.
+    func cancelFromButton() {
+        cancel()
+    }
+
+    /// ✓ in the hands-free pill — stop recording and transcribe.
+    func confirmFromButton() {
+        finish()
     }
 
     private func reset() {

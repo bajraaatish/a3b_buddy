@@ -15,8 +15,8 @@ This plan splits the next five asks across agents. **Read this whole file before
 |---|---|---|
 | **FABLE-1** (foreman) | Claude Code (me) | Rename (task 1), lock-state exposure hook, all merges + stability (task 5). Sole editor of `.xcodeproj`, `Info.plist`, `*.entitlements`, `A3BBuddy/App/*`, `A3BBuddy/Buddy/CompanionManager.swift`. |
 | **GPT-1** | Codex CLI | Flexible hotkeys for both features (task 2). |
-| **CLAUDE-UI** | Claude Code | Whisper pill redesign to match the reference images (task 4). |
-| **CLAUDE-GLOW** | Claude Code | Increase the buddy cursor glow (task 3). Small, single file. |
+| **Agent-Pill** | Claude Code | Whisper pill redesign to match the reference images (task 4). |
+| **Agent-Glow** | Claude Code | Increase the buddy cursor glow (task 3). Small, single file. |
 
 Worktrees (one per non-foreman agent; FABLE-1 works on `merge-clicky-whisper-plan`):
 
@@ -46,15 +46,15 @@ git worktree add ../buddy-glow      feature/cursor-glow
 ## 2. Waves & merge order
 
 ```
-WAVE 0 (FABLE-1, blocks CLAUDE-UI)
+WAVE 0 (FABLE-1, blocks Agent-Pill)
   1a. Rename → "Buddy"
   1b. Expose hands-free lock state + cancel/confirm actions to the pill
-      (small surface CLAUDE-UI builds against — see task 4)
+      (small surface Agent-Pill builds against — see task 4)
 
 WAVE 1 (parallel)
   GPT-1       task 2  flexible hotkeys        (branches from post-wave-0 main)
-  CLAUDE-UI   task 4  whisper pill UI          (needs the lock surface from 1b)
-  CLAUDE-GLOW task 3  cursor glow              (file-isolated; may start immediately)
+  Agent-Pill   task 4  whisper pill UI          (needs the lock surface from 1b)
+  Agent-Glow task 3  cursor glow              (file-isolated; may start immediately)
 
 MERGE (FABLE-1), order low-risk → high-risk:
   glow → pill → hotkeys.  Unsigned build + eyeball after each.
@@ -99,7 +99,7 @@ Exit: bind an arbitrary combo to each feature → both fire; a modifier-only hol
 
 ---
 
-## 5. Task 3 — Increase the cursor glow (CLAUDE-GLOW)
+## 5. Task 3 — Increase the cursor glow (Agent-Glow)
 
 **Goal:** the wine triangle that follows the cursor glows more — clearly visible on light AND dark backgrounds, still tasteful (not neon).
 
@@ -110,7 +110,7 @@ Exit: triangle clearly readable on white and black backgrounds; no animation jan
 
 ---
 
-## 6. Task 4 — Whisper pill UI to match references (CLAUDE-UI)
+## 6. Task 4 — Whisper pill UI to match references (Agent-Pill)
 
 **Goal:** rebuild the floating dictation pill to match the four reference images **exactly**. Files: `A3BBuddy/Overlay/PillView.swift` (main), `A3BBuddy/Overlay/StateText.swift` if needed. The pill only ever appears while recording/transcribing (never idle).
 
@@ -122,10 +122,11 @@ Reference images (committed): `docs/reference/whisper-pill/`
 
 Match the exact look: pill shape/size, dark fill, dot/bar styling, the ✕/✓ button treatment, spinner. Use `Buddy/DesignSystem.swift` tokens where they fit for consistency.
 
-**Integration surface (provided by FABLE-1 in wave 0, task 1b):** the engine/pill will expose
-- `isHandsFreeLocked: Bool` (drives whether the ✕/✓ buttons show), and
-- `cancel()` / `confirm()` actions for those buttons.
-Build the pill against that surface. If the surface isn't in place yet, stub a local `@State`/closure and leave a note in `verification/wiring-requests/claude-ui.md` describing exactly what you need; do **not** edit `Contracts.swift`, `HotkeyManager.swift`, `App/*`, or `CompanionManager.swift`.
+**Integration surface (DONE — wave 0 landed it):** `A3BBuddy/Overlay/RecordingControls.swift` is an `@ObservableObject` already passed into `PillView(engine:controls:)`:
+- `controls.isHandsFreeLocked: Bool` — true during double-tap hands-free; drives whether the ✕/✓ buttons show.
+- `controls.onCancel()` — wire the ✕ button to this (discards the recording).
+- `controls.onConfirm()` — wire the ✓ button to this (stops + transcribes).
+The hosting panel already flips `ignoresMouseEvents` off only while locked, so your ✕/✓ are clickable exactly when shown and never steal focus otherwise. Just build the four visual states in `PillView.swift` against `engine.state` + `controls`. Do **not** edit `Contracts.swift`, `HotkeyManager.swift`, `App/*`, `RecordingControls.swift`, or `CompanionManager.swift` — if you need more from the surface, note it in `verification/wiring-requests/agent-pill.md`.
 
 Exit: all four states render pixel-close to the references; ✕/✓ work in hands-free; pill still shows only while recording/transcribing; `#Preview`s for each state.
 

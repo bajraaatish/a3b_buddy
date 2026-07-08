@@ -154,7 +154,7 @@ struct CompanionPanelView: View {
                 .interpolation(.high)
                 .scaledToFit()
                 .frame(width: 30, height: 30)
-                .accessibilityLabel("a3b-buddy")
+                .accessibilityLabel("Buddy")
 
             Button(action: {
                 NotificationCenter.default.post(name: .a3bDismissPanel, object: nil)
@@ -186,7 +186,7 @@ struct CompanionPanelView: View {
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if companionManager.allPermissionsGranted {
-            Text("You're all set. Hit Start to meet a3b-buddy.")
+            Text("You're all set. Hit Start to meet Buddy.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -197,7 +197,7 @@ struct CompanionPanelView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(DS.Colors.textSecondary)
 
-                Text("Some permissions were revoked. Grant them below to keep using a3b-buddy.")
+                Text("Some permissions were revoked. Grant them below to keep using Buddy.")
                     .font(.system(size: 11))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -205,7 +205,7 @@ struct CompanionPanelView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Hi, I'm a3b-buddy.")
+                Text("Hi, I'm Buddy.")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(DS.Colors.textSecondary)
 
@@ -214,7 +214,7 @@ struct CompanionPanelView: View {
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Nothing runs in the background. a3b-buddy only captures the screen when you press the hot key.")
+                Text("Nothing runs in the background. Buddy only captures the screen when you press the hot key.")
                     .font(.system(size: 11))
                     .foregroundColor(Color(red: 0.9, green: 0.4, blue: 0.4))
                     .fixedSize(horizontal: false, vertical: true)
@@ -561,7 +561,7 @@ struct CompanionPanelView: View {
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 16)
 
-                Text("Show a3b-buddy")
+                Text("Show Buddy")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
             }
@@ -757,7 +757,7 @@ struct CompanionPanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
                         .font(.system(size: 11, weight: .medium))
-                    Text("Quit a3b-buddy")
+                    Text("Quit Buddy")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(DS.Colors.textTertiary)

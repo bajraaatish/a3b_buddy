@@ -10,6 +10,6 @@ extension KeyboardShortcuts.Name {
     /// Hold to record, release to transcribe. Double-tap locks hands-free.
     static let dictation = Self("dictation", default: .init(.space, modifiers: [.option]))
 
-    /// Hold to talk to Clicky. Modifier-only default is stored separately.
+    /// Hold to talk to Buddy. Modifier-only default is stored separately.
     static let pushToTalk = Self("pushToTalk")
 }

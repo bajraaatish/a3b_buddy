@@ -10,6 +10,9 @@ import SwiftUI
 
 struct PillView<Engine: DictationEngine>: View {
     @ObservedObject var engine: Engine
+    /// Hands-free lock flag + ✕/✓ actions (Contracts is frozen, so these ride
+    /// alongside the engine). The pill-UI redesign consumes this.
+    @ObservedObject var controls: RecordingControls
 
     private static var barCount: Int { 26 }
     @State private var levels: [Float] = Array(repeating: 0, count: 26)
@@ -82,13 +85,22 @@ struct PillView<Engine: DictationEngine>: View {
 #Preview("Recording") {
     let engine = MockDictationEngine()
     engine.startRecording()
-    return PillView(engine: engine)
+    return PillView(engine: engine, controls: RecordingControls())
         .padding(40)
 }
 
 #Preview("Transcribing") {
     let engine = MockDictationEngine()
     engine.setState(.transcribing)
-    return PillView(engine: engine)
+    return PillView(engine: engine, controls: RecordingControls())
+        .padding(40)
+}
+
+#Preview("Hands-free") {
+    let engine = MockDictationEngine()
+    engine.startRecording()
+    let controls = RecordingControls()
+    controls.isHandsFreeLocked = true
+    return PillView(engine: engine, controls: controls)
         .padding(40)
 }
