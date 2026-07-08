@@ -45,6 +45,15 @@ final class MockDictationEngine: DictationEngine {
         }
     }
 
+    /// Preview helper: enter `.recording` without the simulated-speech
+    /// timer, so `PillView` previews can show the held-but-silent state
+    /// distinctly from the talking state.
+    func startRecordingSilently() {
+        guard case .idle = state else { return }
+        recordingStart = .now
+        state = .recording(startedAt: recordingStart!)
+    }
+
     func stopAndTranscribe() async -> DictationResult? {
         guard case .recording = state, let start = recordingStart else { return nil }
         stopLevelTimer()
