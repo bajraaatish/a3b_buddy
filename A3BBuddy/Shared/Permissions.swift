@@ -49,6 +49,13 @@ enum Permissions {
         IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
     }
 
+    /// TCC admits a listen-only keyboard event tap on **either** grant, and gates
+    /// it per *process*, not per tap. Only `CGEvent.tapCreate` returning nil is
+    /// authoritative; this is the check that decides whether to prompt first.
+    static var eventTapPermitted: Bool {
+        inputMonitoringGranted || accessibilityGranted
+    }
+
     // MARK: System Settings deep-links
 
     static func openMicSettings() {

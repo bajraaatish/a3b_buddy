@@ -1,274 +1,79 @@
 //
 //  GlobalPushToTalkShortcutMonitor.swift
-//  leanring-buddy
+//  a3b-buddy
 //
-//  Captures push-to-talk keyboard shortcuts while a3b-buddy is running in the
-//  background. Uses a listen-only CGEvent tap so modifier-only shortcuts like
-//  ctrl + option behave more like a real system-wide voice tool.
+//  The push-to-talk half of `HotkeyEngine`'s output. Whatever the user bound to
+//  "Talk to Buddy" in Settings arrives here as `pressed` / `released` / `cancelled`
+//  and leaves as the `ShortcutTransition` stream `CompanionManager` already reads.
+//
+//  `start()` / `stop()` are *delivery* gates, not tap lifecycles. `CompanionManager`
+//  calls them from its 1.5-second Accessibility poller; under the old two-tap design
+//  that tore an event tap down and rebuilt it on a loop, which is why this file used
+//  to carry a "don't restart or you kill the waveform mid-press" hack. The tap now
+//  belongs to `HotkeyEngine` and nothing here can touch it — so revoking
+//  Accessibility stops push-to-talk while dictation keeps working.
 //
 
-import AppKit
 import Combine
-import CoreGraphics
 import Foundation
-import KeyboardShortcuts
 
+@MainActor
 final class GlobalPushToTalkShortcutMonitor: ObservableObject {
     let shortcutTransitionPublisher = PassthroughSubject<BuddyPushToTalkShortcut.ShortcutTransition, Never>()
 
-    private enum ActiveShortcutSource {
-        case keyboardShortcut
-        case modifierOnly
-    }
-
-    private var globalEventTap: CFMachPort?
-    private var globalEventTapRunLoopSource: CFRunLoopSource?
-    private var defaultsObserver: NSObjectProtocol?
-    private var isMonitoringEnabled = false
-    private var activeShortcutSource: ActiveShortcutSource?
-    private var cachedKeyboardShortcut: KeyboardShortcuts.Shortcut?
-    private var cachedModifierOnlyShortcut = ModifierOnlyShortcut.controlOption
-
-    /// Mutated exclusively from the CGEvent tap callback, which runs on
-    /// `CFRunLoopGetMain()` and therefore always executes on the main thread.
     /// Published so the overlay can hide immediately on key release without
     /// waiting for the async dictation state pipeline to catch up.
     @Published private(set) var isShortcutCurrentlyPressed = false
 
-    init() {
-        cacheConfiguredShortcuts()
-        registerKeyboardShortcutHandlers()
-        watchConfiguredShortcuts()
+    private let engine: HotkeyEngine
+    private var isEnabled = false
+    private var cancellable: AnyCancellable?
+
+    init(engine: HotkeyEngine = .shared) {
+        self.engine = engine
+        cancellable = engine.events
+            .forFeature(.pushToTalk)
+            .sink { [weak self] event in self?.handle(event) }
     }
 
-    deinit {
-        if let defaultsObserver {
-            NotificationCenter.default.removeObserver(defaultsObserver)
-        }
-        stop()
-    }
-
+    /// Idempotent — called every 1.5 s by `CompanionManager.refreshAllPermissions()`.
+    /// Deliberately does not touch the event tap.
     func start() {
-        isMonitoringEnabled = true
-        cacheConfiguredShortcuts()
-        installModifierOnlyEventTapIfNeeded()
+        isEnabled = true
     }
 
     func stop() {
-        isMonitoringEnabled = false
-        releasePressedShortcutIfNeeded()
-        removeModifierOnlyEventTap()
+        isEnabled = false
+        // A hold in progress would never get its key-up delivered to us now.
+        engine.releaseIfHeld(.pushToTalk, reason: .monitoringStopped)
+        publishReleaseIfNeeded()
     }
 
-    private func registerKeyboardShortcutHandlers() {
-        KeyboardShortcuts.onKeyDown(for: .pushToTalk) { [weak self] in
-            DispatchQueue.main.async {
-                self?.handleKeyboardShortcutPressed()
-            }
-        }
+    private func handle(_ event: HotkeyEvent) {
+        guard isEnabled else { return }
 
-        KeyboardShortcuts.onKeyUp(for: .pushToTalk) { [weak self] in
-            DispatchQueue.main.async {
-                self?.handleKeyboardShortcutReleased()
-            }
-        }
-    }
+        switch event {
+        case .pressed:
+            guard !isShortcutCurrentlyPressed else { return }
+            isShortcutCurrentlyPressed = true
+            shortcutTransitionPublisher.send(.pressed)
 
-    private func watchConfiguredShortcuts() {
-        defaultsObserver = NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.handleConfiguredShortcutsChanged()
-        }
-    }
+        // `pushToTalk.supersetPolicy == .release`, so a stray ⇧ mid-utterance
+        // arrives as `.released` and keeps what was captured. `.cancelled` reaches
+        // us only from a rebind or a lost grant — end the utterance either way.
+        case .released, .cancelled:
+            publishReleaseIfNeeded()
 
-    private func handleConfiguredShortcutsChanged() {
-        let keyboardShortcut = currentKeyboardShortcut
-        let modifierOnlyShortcut = currentModifierOnlyShortcut
-        let didChange = keyboardShortcut != cachedKeyboardShortcut
-            || modifierOnlyShortcut != cachedModifierOnlyShortcut
-
-        guard didChange else { return }
-
-        cachedKeyboardShortcut = keyboardShortcut
-        cachedModifierOnlyShortcut = modifierOnlyShortcut
-
-        releasePressedShortcutIfNeeded()
-
-        guard isMonitoringEnabled else { return }
-
-        if modifierOnlyShortcut == .off {
-            removeModifierOnlyEventTap()
-        } else {
-            installModifierOnlyEventTapIfNeeded()
+        // Push-to-talk has no prewarm (its recorder starts async, behind provider
+        // setup) and no Esc affordance — you are holding a key; letting go is it.
+        case .armed, .disarmed, .escapePressed:
+            break
         }
     }
 
-    private func cacheConfiguredShortcuts() {
-        cachedKeyboardShortcut = currentKeyboardShortcut
-        cachedModifierOnlyShortcut = currentModifierOnlyShortcut
-    }
-
-    private var currentKeyboardShortcut: KeyboardShortcuts.Shortcut? {
-        KeyboardShortcuts.getShortcut(for: .pushToTalk)
-    }
-
-    private var currentModifierOnlyShortcut: ModifierOnlyShortcut {
-        // Read via HotkeyBindingBridge, not the legacy defaults key: Settings edits
-        // HotkeyBindingStore now. Both go away when HotkeyEngine lands.
-        MainActor.assumeIsolated { ModifierOnlyShortcut.fromBindings(.pushToTalk, fallback: .controlOption) }
-    }
-
-    private func installModifierOnlyEventTapIfNeeded() {
-        // If the event tap is already running, don't restart it. Restarting
-        // resets isShortcutCurrentlyPressed, which would kill the waveform
-        // overlay mid-press when the permission poller calls
-        // refreshAllPermissions → start() every few seconds.
-        guard currentModifierOnlyShortcut != .off else {
-            removeModifierOnlyEventTap()
-            return
-        }
-
-        guard globalEventTap == nil else { return }
-
-        let monitoredEventTypes: [CGEventType] = [.flagsChanged]
-        let eventMask = monitoredEventTypes.reduce(CGEventMask(0)) { currentMask, eventType in
-            currentMask | (CGEventMask(1) << eventType.rawValue)
-        }
-
-        let eventTapCallback: CGEventTapCallBack = { _, eventType, event, userInfo in
-            guard let userInfo else {
-                return Unmanaged.passUnretained(event)
-            }
-
-            let globalPushToTalkShortcutMonitor = Unmanaged<GlobalPushToTalkShortcutMonitor>
-                .fromOpaque(userInfo)
-                .takeUnretainedValue()
-
-            return globalPushToTalkShortcutMonitor.handleGlobalEventTap(
-                eventType: eventType,
-                event: event
-            )
-        }
-
-        guard let globalEventTap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .listenOnly,
-            eventsOfInterest: eventMask,
-            callback: eventTapCallback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else {
-            print("⚠️ Global push-to-talk: couldn't create CGEvent tap")
-            return
-        }
-
-        guard let globalEventTapRunLoopSource = CFMachPortCreateRunLoopSource(
-            kCFAllocatorDefault,
-            globalEventTap,
-            0
-        ) else {
-            CFMachPortInvalidate(globalEventTap)
-            print("⚠️ Global push-to-talk: couldn't create event tap run loop source")
-            return
-        }
-
-        self.globalEventTap = globalEventTap
-        self.globalEventTapRunLoopSource = globalEventTapRunLoopSource
-
-        CFRunLoopAddSource(CFRunLoopGetMain(), globalEventTapRunLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: globalEventTap, enable: true)
-    }
-
-    private func removeModifierOnlyEventTap() {
-        if let globalEventTapRunLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), globalEventTapRunLoopSource, .commonModes)
-            self.globalEventTapRunLoopSource = nil
-        }
-
-        if let globalEventTap {
-            CFMachPortInvalidate(globalEventTap)
-            self.globalEventTap = nil
-        }
-    }
-
-    private func handleGlobalEventTap(
-        eventType: CGEventType,
-        event: CGEvent
-    ) -> Unmanaged<CGEvent>? {
-        if eventType == .tapDisabledByTimeout || eventType == .tapDisabledByUserInput {
-            if let globalEventTap {
-                CGEvent.tapEnable(tap: globalEventTap, enable: true)
-            }
-            return Unmanaged.passUnretained(event)
-        }
-
-        guard isMonitoringEnabled else {
-            return Unmanaged.passUnretained(event)
-        }
-
-        if eventType == .flagsChanged {
-            handleModifierOnlyFlagsChanged(modifierFlags(from: event.flags))
-        }
-
-        return Unmanaged.passUnretained(event)
-    }
-
-    private func handleKeyboardShortcutPressed() {
-        guard isMonitoringEnabled else { return }
-        publishShortcutPressed(from: .keyboardShortcut)
-    }
-
-    private func handleKeyboardShortcutReleased() {
-        guard isMonitoringEnabled else { return }
-        publishShortcutReleased(from: .keyboardShortcut)
-    }
-
-    private func handleModifierOnlyFlagsChanged(_ modifierFlags: NSEvent.ModifierFlags) {
-        switch currentModifierOnlyShortcut.matchState(in: modifierFlags) {
-        case .off, .released, .superset:
-            publishShortcutReleased(from: .modifierOnly)
-        case .exact:
-            publishShortcutPressed(from: .modifierOnly)
-        }
-    }
-
-    private func publishShortcutPressed(from source: ActiveShortcutSource) {
-        guard activeShortcutSource == nil else { return }
-
-        activeShortcutSource = source
-        isShortcutCurrentlyPressed = true
-        shortcutTransitionPublisher.send(.pressed)
-    }
-
-    private func publishShortcutReleased(from source: ActiveShortcutSource) {
-        guard activeShortcutSource == source else { return }
-
-        activeShortcutSource = nil
+    private func publishReleaseIfNeeded() {
+        guard isShortcutCurrentlyPressed else { return }
         isShortcutCurrentlyPressed = false
         shortcutTransitionPublisher.send(.released)
-    }
-
-    private func releasePressedShortcutIfNeeded() {
-        guard activeShortcutSource != nil else {
-            isShortcutCurrentlyPressed = false
-            return
-        }
-
-        activeShortcutSource = nil
-        isShortcutCurrentlyPressed = false
-        shortcutTransitionPublisher.send(.released)
-    }
-
-    private func modifierFlags(from flags: CGEventFlags) -> NSEvent.ModifierFlags {
-        var modifiers: NSEvent.ModifierFlags = []
-        if flags.contains(.maskControl) { modifiers.insert(.control) }
-        if flags.contains(.maskCommand) { modifiers.insert(.command) }
-        if flags.contains(.maskAlternate) { modifiers.insert(.option) }
-        if flags.contains(.maskShift) { modifiers.insert(.shift) }
-        if flags.contains(.maskSecondaryFn) { modifiers.insert(.function) }
-        return modifiers
     }
 }
