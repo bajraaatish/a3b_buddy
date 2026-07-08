@@ -1,1 +1,25 @@
+# macOS
 .DS_Store
+
+# Xcode
+xcuserdata/
+DerivedData/
+build/
+releases/
+*.xcuserstate
+*.xcscmblueprint
+
+# SPM
+.swiftpm/
+.build/
+
+# Whisper models are downloaded at runtime — never commit
+*.mlmodelc
+
+# Cloudflare Worker
+worker/node_modules/
+worker/.dev.vars
+
+# Agent scratch
+.claude/
+coding-plans/
