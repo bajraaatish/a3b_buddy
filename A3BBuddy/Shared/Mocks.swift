@@ -31,6 +31,11 @@ final class MockDictationEngine: DictationEngine {
         "Reminder that WPM is words divided by recording minutes, computed once at save time.",
     ]
 
+    /// Mirrors `RealDictationEngine`'s prewarm pair so `typealias ActiveEngine`
+    /// can still flip. There is no mic to warm.
+    func prewarmRecording() {}
+    func discardPrewarm() {}
+
     func startRecording() {
         guard case .idle = state else { return }
         recordingStart = .now

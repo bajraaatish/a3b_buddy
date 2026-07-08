@@ -24,6 +24,8 @@ final class RealDictationEngine: ObservableObject, DictationEngine {
     private var target: (bundleID: String, name: String) = ("", "")
     private var failResetTask: Task<Void, Never>?
     private var prefObserver: NSObjectProtocol?
+    /// When the mic actually opened, if it opened before the press was committed.
+    private var armedAt: Date?
 
     init() {
         recorder.onLevel = { [weak self] level in
@@ -74,6 +76,36 @@ final class RealDictationEngine: ObservableObject, DictationEngine {
         }
     }
 
+    /// Opens the microphone the instant a dictation hold goes down, before the
+    /// hotkey engine has decided whether it is a real press or the prefix of a
+    /// chord (⌃ on the way to ⌃⌥). `AudioRecorder` has no ring buffer — samples
+    /// accumulate only from `start()` — so without this a grace window would eat
+    /// the first 200 ms of speech.
+    ///
+    /// Deliberately silent: no cue, no pill, no state change. And it never prompts
+    /// for mic access — a permission sheet triggered by holding a modifier is
+    /// hostile. The prompt still comes from `startRecording()`.
+    ///
+    /// Concrete, not a `DictationEngine` requirement: `Shared/Contracts.swift` is frozen.
+    func prewarmRecording() {
+        guard case .idle = state, !recorder.isRecording, Permissions.micStatus == .authorized else { return }
+        captureTargetApp()
+        let mic = UserDefaults.standard.string(forKey: PrefKey.preferredMicID) ?? ""
+        try? recorder.start(preferredDeviceUID: mic)
+        armedAt = recorder.isRecording ? .now : nil
+    }
+
+    /// The hold lost its race with a longer chord. Throw the warm-up away — but
+    /// only if it never became a real recording. Synchronous on purpose: the
+    /// engine emits `disarmed` before the winner's `pressed`, so the two
+    /// `AVAudioEngine`s never contend for the input node.
+    func discardPrewarm() {
+        guard case .idle = state, recorder.isRecording else { return }
+        recorder.cancel()
+        audioLevel = 0
+        armedAt = nil
+    }
+
     func stopAndTranscribe() async -> DictationResult? {
         guard case .recording = state else { return nil }
         playCue(.stop)
@@ -122,6 +154,7 @@ final class RealDictationEngine: ObservableObject, DictationEngine {
     func cancel() {
         recorder.cancel()
         audioLevel = 0
+        armedAt = nil
         failResetTask?.cancel()
         state = .idle
     }
@@ -130,21 +163,33 @@ final class RealDictationEngine: ObservableObject, DictationEngine {
 
     private func beginCapture() {
         guard case .idle = state else { return }
-        // Captured at record-start (rule: target app is where you spoke, not
-        // wherever focus drifted by transcription time).
+
+        if !recorder.isRecording {
+            captureTargetApp()
+            let mic = UserDefaults.standard.string(forKey: PrefKey.preferredMicID) ?? ""
+            do {
+                try recorder.start(preferredDeviceUID: mic)
+            } catch {
+                NSLog("Whisper: audio capture failed to start — \(error)")
+                armedAt = nil
+                fail(.micDenied)
+                return
+            }
+        }
+
+        playCue(.start)
+        // Backdated to when the mic actually opened, so the pill's elapsed timer
+        // matches the audio. `stopAndTranscribe`'s duration is sample-derived
+        // either way — the grace window's 200 ms of speech is kept, not dropped.
+        state = .recording(startedAt: armedAt ?? .now)
+        armedAt = nil
+    }
+
+    /// The target app is where you *spoke*, not wherever focus drifted to by the
+    /// time transcription finished. Captured at arm time when there was one.
+    private func captureTargetApp() {
         let front = NSWorkspace.shared.frontmostApplication
         target = (front?.bundleIdentifier ?? "unknown", front?.localizedName ?? "Unknown")
-
-        let mic = UserDefaults.standard.string(forKey: PrefKey.preferredMicID) ?? ""
-        do {
-            try recorder.start(preferredDeviceUID: mic)
-        } catch {
-            NSLog("Whisper: audio capture failed to start — \(error)")
-            fail(.micDenied)
-            return
-        }
-        playCue(.start)
-        state = .recording(startedAt: .now)
     }
 
     /// Failure shows on the pill briefly, then the engine returns to idle so

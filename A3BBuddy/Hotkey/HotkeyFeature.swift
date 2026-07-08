@@ -102,4 +102,14 @@ enum HotkeyFeature: String, CaseIterable, Codable, Identifiable, Sendable {
         case .pushToTalk: false
         }
     }
+
+    /// Whisper's Esc kills the recording even in hands-free lock — the one cancel
+    /// that outranks the lock. Push-to-talk has no Esc affordance: you are holding
+    /// a key, and letting go is the affordance.
+    var cancelsOnEscape: Bool {
+        switch self {
+        case .dictation: true
+        case .pushToTalk: false
+        }
+    }
 }
