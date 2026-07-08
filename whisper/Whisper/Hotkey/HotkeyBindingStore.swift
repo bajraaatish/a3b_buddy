@@ -14,6 +14,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import Combine
 import KeyboardShortcuts
 
 @MainActor
