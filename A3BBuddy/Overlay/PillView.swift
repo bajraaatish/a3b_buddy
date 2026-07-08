@@ -5,6 +5,9 @@
 //  The floating pill. Dark capsule, live waveform while recording, pulsing
 //  dots while transcribing. It exists only in those two states (Wispr's lesson).
 //
+//  Sizing/colors below are measured pixel-for-pixel off docs/reference/whisper-pill/*.png
+//  (run-length-encoded row/column scans, not eyeballed) — see git history for the analysis.
+//
 
 import SwiftUI
 
@@ -14,108 +17,126 @@ struct PillView<Engine: DictationEngine>: View {
     /// alongside the engine).
     @ObservedObject var controls: RecordingControls
 
-    /// Size while recording/transcribing without the hands-free buttons.
-    static var baseSize: CGSize { CGSize(width: 220, height: 44) }
-    /// Size while hands-free-locked — adds room for the ✕/✓ circles.
-    static var handsFreeSize: CGSize { CGSize(width: 292, height: 44) }
+    static var capsuleHeight: CGFloat { 56 }
+    private static var dotCount: Int { 10 }
+    private static var dotSize: CGFloat { 4 }
+    private static var dotGap: CGFloat { 4 }
+    private static var waveformWidth: CGFloat {
+        CGFloat(dotCount) * dotSize + CGFloat(dotCount - 1) * dotGap
+    }
+    private static var buttonDiameter: CGFloat { 34 }
 
-    /// Single source of truth for pill/panel size, shared with
-    /// `RecordingPanelController` so the NSPanel frame and this view's own
-    /// layout can never drift apart.
-    static func panelSize(isHandsFreeExpanded: Bool) -> CGSize {
-        isHandsFreeExpanded ? handsFreeSize : baseSize
+    /// The four visual states, collapsing `(engine.state, controls.isHandsFreeLocked)`
+    /// into what the pill actually renders. Single source of truth shared with
+    /// `RecordingPanelController` so the NSPanel frame can never drift from this view's
+    /// own layout.
+    enum Layout: Equatable {
+        case recording(handsFree: Bool)
+        case transcribing
+        case hidden
     }
 
-    private static var barCount: Int { 26 }
-    @State private var levels: [Float] = Array(repeating: 0, count: barCount)
+    static func layout(state: DictationState, isHandsFreeLocked: Bool) -> Layout {
+        switch state {
+        case .recording: return .recording(handsFree: isHandsFreeLocked)
+        case .transcribing: return .transcribing
+        case .idle, .failed: return .hidden
+        }
+    }
 
-    private var isHandsFreeExpanded: Bool {
-        if case .recording = engine.state { return controls.isHandsFreeLocked }
-        return false
+    /// Measured against the reference images: 146×56 base, 204×56 hands-free
+    /// (13 pad + 34 button + 17 gap + 76 dots + 17 gap + 34 button + 13 pad),
+    /// 195×56 transcribing (38 pad + 76 dots + 17 gap + 30 spinner + 34 pad).
+    static func size(for layout: Layout) -> CGSize {
+        switch layout {
+        case .recording(handsFree: false): return CGSize(width: 146, height: capsuleHeight)
+        case .recording(handsFree: true): return CGSize(width: 204, height: capsuleHeight)
+        case .transcribing: return CGSize(width: 195, height: capsuleHeight)
+        case .hidden: return CGSize(width: 146, height: capsuleHeight)
+        }
+    }
+
+    private var layout: Layout {
+        Self.layout(state: engine.state, isHandsFreeLocked: controls.isHandsFreeLocked)
     }
 
     var body: some View {
         content
-            .frame(
-                width: Self.panelSize(isHandsFreeExpanded: isHandsFreeExpanded).width,
-                height: Self.baseSize.height
-            )
-            .background(.black.opacity(0.82), in: Capsule())
+            .frame(width: Self.size(for: layout).width, height: Self.capsuleHeight)
+            .background(.black.opacity(0.94), in: Capsule())
             .overlay(Capsule().strokeBorder(.white.opacity(0.08)))
             .shadow(color: .black.opacity(0.35), radius: 14, y: 4)
-            .onChange(of: engine.audioLevel) { _, newLevel in
-                levels.removeFirst()
-                levels.append(newLevel)
-            }
-            .onChange(of: engine.state) { _, newState in
-                switch newState {
-                case .recording, .transcribing:
-                    // Fresh, calm baseline each time we enter an active state —
-                    // otherwise a few noisy trailing frames from the end of
-                    // recording still show while transcribing starts.
-                    levels = Array(repeating: 0, count: Self.barCount)
-                default:
-                    break
-                }
-            }
-            .animation(.easeOut(duration: DS.Animation.fast), value: engine.state)
-            .animation(.easeOut(duration: DS.Animation.fast), value: isHandsFreeExpanded)
+            .animation(.easeOut(duration: DS.Animation.fast), value: layout)
     }
 
     @ViewBuilder
     private var content: some View {
-        switch engine.state {
-        case .recording where controls.isHandsFreeLocked:
-            HStack(spacing: 12) {
+        switch layout {
+        case .recording(handsFree: true):
+            HStack(spacing: 17) {
                 cancelButton
                 waveform
                 confirmButton
             }
-            .padding(.horizontal, 14)
-        case .recording, .transcribing:
-            HStack(spacing: 10) {
+            .padding(.horizontal, 13)
+        case .recording(handsFree: false):
+            waveform
+                .frame(maxWidth: .infinity)
+        case .transcribing:
+            HStack(spacing: 17) {
                 waveform
-                if case .transcribing = engine.state {
-                    PillSpinnerView()
-                }
+                PillSpinnerView()
             }
-            .padding(.horizontal, 18)
-        default:
+            .padding(.leading, 38)
+            .padding(.trailing, 34)
+        case .hidden:
             EmptyView()
         }
     }
 
-    /// Scrolling waveform: newest level enters on the right. Idles as a
-    /// gently breathing row of dots rather than a frozen line — the phase
-    /// formula matches `A3BBuddyWaveformView` (OverlayWindow.swift).
+    /// Symmetric bell profile (not a scrolling history of raw samples) — the
+    /// reference "talking" image is a smooth hump peaking at the two center
+    /// dots, same technique `A3BBuddyWaveformView` uses for its 5-bar cursor
+    /// waveform (OverlayWindow.swift), just with 10 dots.
+    private static var barProfile: [CGFloat] { [0.35, 0.5, 0.7, 0.85, 1.0, 1.0, 0.85, 0.7, 0.5, 0.35] }
+
+    private var dotColor: Color {
+        if case .transcribing = engine.state { return .white.opacity(0.28) }
+        return .white.opacity(0.95)
+    }
+
     private var waveform: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 36.0)) { timeline in
-            HStack(alignment: .center, spacing: 3) {
-                ForEach(levels.indices, id: \.self) { index in
+            HStack(alignment: .center, spacing: Self.dotGap) {
+                ForEach(0 ..< Self.dotCount, id: \.self) { index in
                     Capsule()
-                        .fill(.white.opacity(0.92))
-                        .frame(width: 2.5, height: barHeight(for: index, level: levels[index], date: timeline.date))
+                        .fill(dotColor)
+                        .frame(width: Self.dotSize, height: barHeight(for: index, date: timeline.date))
                 }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(width: Self.waveformWidth, height: Self.capsuleHeight, alignment: .center)
     }
 
-    private func barHeight(for index: Int, level: Float, date: Date) -> CGFloat {
-        let clamped = CGFloat(min(max(level, 0), 1))
-        let reactive = clamped * 21
+    /// Idle pulse formula ported from `A3BBuddyWaveformView`; the reactive
+    /// term uses that same view's easing curve so a normal speaking level
+    /// already reads as lively, not just its peaks.
+    private func barHeight(for index: Int, date: Date) -> CGFloat {
         let phase = date.timeIntervalSinceReferenceDate * 3.6 + Double(index) * 0.35
         let idlePulse = (sin(phase) + 1) / 2 * 1.5
-        return 3 + reactive + idlePulse // 3pt floor so silence still reads as a dotted line
+        let normalizedLevel = max(Double(engine.audioLevel) - 0.008, 0)
+        let easedLevel = pow(min(normalizedLevel * 2.85, 1), 0.76)
+        let reactive = CGFloat(easedLevel) * 21 * Self.barProfile[index]
+        return Self.dotSize + idlePulse + reactive // dotSize floor: idle dot reads as a small square, matching reference
     }
 
     private var cancelButton: some View {
         Button(action: controls.onCancel) {
             Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.white)
-                .frame(width: 28, height: 28)
-                .background(.white.opacity(0.18), in: Circle())
+                .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
+                .background(.white.opacity(0.28), in: Circle())
         }
         .buttonStyle(.plain)
         .pointerCursor()
@@ -124,9 +145,9 @@ struct PillView<Engine: DictationEngine>: View {
     private var confirmButton: some View {
         Button(action: controls.onConfirm) {
             Image(systemName: "checkmark")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(.black)
-                .frame(width: 28, height: 28)
+                .frame(width: Self.buttonDiameter, height: Self.buttonDiameter)
                 .background(.white, in: Circle())
         }
         .buttonStyle(.plain)
@@ -134,29 +155,39 @@ struct PillView<Engine: DictationEngine>: View {
     }
 }
 
-/// White spinning indicator for the `.transcribing` state. Local variant of
-/// `A3BBuddySpinnerView` (OverlayWindow.swift, wine-coloured + private to
-/// that file) — same trim/gradient/rotation, no cursor glow.
+/// Spinning indicator for the `.transcribing` state. The reference is an
+/// 8-spoke radial activity indicator (classic spinning-wait-cursor style) —
+/// NOT `A3BBuddySpinnerView`'s single trimmed arc (OverlayWindow.swift).
+/// One fixed hue at 8 fixed opacities, the whole ring rotates as a rigid
+/// unit; measured lavender ~#877CA4, ~30pt diameter.
 private struct PillSpinnerView: View {
     @State private var isSpinning = false
+    private static let tint = Color(red: 135.0 / 255, green: 124.0 / 255, blue: 164.0 / 255)
+    private static let spokeCount = 8
+    private static let diameter: CGFloat = 30
 
     var body: some View {
-        Circle()
-            .trim(from: 0.15, to: 0.85)
-            .stroke(
-                AngularGradient(
-                    colors: [Color.white.opacity(0.0), Color.white],
-                    center: .center
-                ),
-                style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
-            )
-            .frame(width: 14, height: 14)
-            .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .onAppear {
-                withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
-                    isSpinning = true
-                }
+        ZStack {
+            ForEach(0 ..< Self.spokeCount, id: \.self) { index in
+                Capsule()
+                    .fill(Self.tint.opacity(opacity(for: index)))
+                    .frame(width: 2.5, height: 9)
+                    .offset(y: -Self.diameter / 2 + 4.5)
+                    .rotationEffect(.degrees(Double(index) / Double(Self.spokeCount) * 360))
             }
+        }
+        .frame(width: Self.diameter, height: Self.diameter)
+        .rotationEffect(.degrees(isSpinning ? 360 : 0))
+        .onAppear {
+            withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
+                isSpinning = true
+            }
+        }
+    }
+
+    /// Brightest spoke leads, fading around the ring — reads as a chasing tail while spinning.
+    private func opacity(for index: Int) -> Double {
+        1.0 - (Double(index) / Double(Self.spokeCount)) * 0.85
     }
 }
 

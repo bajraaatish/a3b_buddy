@@ -26,20 +26,24 @@ final class RecordingPanelController<Engine: DictationEngine> {
         cancellable = engine.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.sync() }
         }
-        // Hands-free is also state-gated (see `isHandsFreeExpanded`), so a lock
+        // Hands-free is also state-gated (see `currentLayout`), so a lock
         // toggle can change panel size/hit-testing even with no engine-state change.
         lockCancellable = controls.$isHandsFreeLocked.sink { [weak self] _ in
             DispatchQueue.main.async { self?.sync() }
         }
     }
 
-    /// Mirrors `PillView.isHandsFreeExpanded`: the ✕/✓ row only shows while
-    /// actively recording. Without this a lock flag that outlives the
-    /// recording (e.g. still true for one tick into `.transcribing`) would
-    /// leave the panel sized/click-through for buttons `PillView` isn't
-    /// drawing anymore.
-    private var isHandsFreeExpanded: Bool {
-        if case .recording = engine.state { return controls.isHandsFreeLocked }
+    /// Same `(engine.state, controls.isHandsFreeLocked)` collapse `PillView` uses
+    /// for its own layout switch — single source of truth, so the panel's size
+    /// and hit-testing can never drift from what's actually drawn.
+    private var currentLayout: PillView<Engine>.Layout {
+        PillView<Engine>.layout(state: engine.state, isHandsFreeLocked: controls.isHandsFreeLocked)
+    }
+
+    /// Only the hands-free ✕/✓ row is clickable; every other layout (including
+    /// transcribing, even if the lock flag hasn't reset yet) stays click-through.
+    private var acceptsMouseEvents: Bool {
+        if case .recording(handsFree: true) = currentLayout { return true }
         return false
     }
 
@@ -53,10 +57,10 @@ final class RecordingPanelController<Engine: DictationEngine> {
     }
 
     private func show() {
-        let expanded = isHandsFreeExpanded
-        let size = PillView<Engine>.panelSize(isHandsFreeExpanded: expanded)
+        let size = PillView<Engine>.size(for: currentLayout)
+        let clickable = acceptsMouseEvents
         if panel == nil {
-            panel = makePanel(size: size, expanded: expanded)
+            panel = makePanel(size: size, clickable: clickable)
         }
         guard let panel else { return }
         if panel.isVisible {
@@ -68,7 +72,7 @@ final class RecordingPanelController<Engine: DictationEngine> {
             // was hidden, same as the original always-reposition-on-show behavior.
             placeCentered(panel, size: size)
         }
-        panel.ignoresMouseEvents = !expanded // ✕/✓ need clicks; everywhere else stays click-through
+        panel.ignoresMouseEvents = !clickable
         guard !panel.isVisible else { return }
         panel.orderFrontRegardless() // never makeKey — focus must stay in the target app
     }
@@ -77,7 +81,7 @@ final class RecordingPanelController<Engine: DictationEngine> {
         panel?.orderOut(nil)
     }
 
-    private func makePanel(size: CGSize, expanded: Bool) -> NSPanel {
+    private func makePanel(size: CGSize, clickable: Bool) -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -90,7 +94,7 @@ final class RecordingPanelController<Engine: DictationEngine> {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false // PillView draws its own soft shadow
-        panel.ignoresMouseEvents = !expanded
+        panel.ignoresMouseEvents = !clickable
         panel.hidesOnDeactivate = false
         panel.contentView = NSHostingView(rootView: PillView(engine: engine, controls: controls))
         placeCentered(panel, size: size)

@@ -206,12 +206,18 @@ final class RealDictationEngine: ObservableObject, DictationEngine {
 
     private enum Cue { case start, stop }
 
+    /// Same click, quieter and bass-boosted; the stop cue is the start cue
+    /// played in reverse, so one asset gives two related-but-distinct sounds.
+    private static let startCueURL = Bundle.main.url(forResource: "select-click", withExtension: "wav")
+    private static let stopCueURL = Bundle.main.url(forResource: "select-click-release", withExtension: "wav")
+
     private func playCue(_ cue: Cue) {
         let defaults = UserDefaults.standard
         let enabled = defaults.object(forKey: PrefKey.soundCues) == nil
             ? true
             : defaults.bool(forKey: PrefKey.soundCues)
         guard enabled else { return }
-        NSSound(named: cue == .start ? "Tink" : "Pop")?.play()
+        guard let url = cue == .start ? Self.startCueURL : Self.stopCueURL else { return }
+        NSSound(contentsOf: url, byReference: true)?.play()
     }
 }
