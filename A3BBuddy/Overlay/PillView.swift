@@ -121,14 +121,16 @@ struct PillView<Engine: DictationEngine>: View {
     }
 
     /// Idle pulse formula ported from `A3BBuddyWaveformView`; the reactive
-    /// term uses that same view's easing curve so a normal speaking level
-    /// already reads as lively, not just its peaks.
+    /// term uses that same view's easing curve, tuned hotter than the
+    /// source (4.8x not 2.85x gain, 0.55 not 0.76 exponent) so normal
+    /// talking volume swings the bars hard instead of needing near-peak
+    /// input to look alive.
     private func barHeight(for index: Int, date: Date) -> CGFloat {
         let phase = date.timeIntervalSinceReferenceDate * 3.6 + Double(index) * 0.35
         let idlePulse = (sin(phase) + 1) / 2 * 0.75
         let normalizedLevel = max(Double(engine.audioLevel) - 0.008, 0)
-        let easedLevel = pow(min(normalizedLevel * 2.85, 1), 0.76)
-        let reactive = CGFloat(easedLevel) * 10.5 * Self.barProfile[index]
+        let easedLevel = pow(min(normalizedLevel * 4.8, 1), 0.55)
+        let reactive = CGFloat(easedLevel) * 13 * Self.barProfile[index]
         return Self.dotSize + idlePulse + reactive // dotSize floor: idle dot reads as a small square, matching reference
     }
 
