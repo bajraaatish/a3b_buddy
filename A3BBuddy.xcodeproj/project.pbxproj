@@ -9,8 +9,6 @@
 /* Begin PBXBuildFile section */
 		AA10000129AA000000000001 /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000329AA000000000003 /* WhisperKit */; };
 		AA10000229AA000000000002 /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = AA10000429AA000000000004 /* KeyboardShortcuts */; };
-		AA20000129BB000000000001 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AA20000329BB000000000003 /* Sparkle */; };
-		AA20000229BB000000000002 /* PostHog in Frameworks */ = {isa = PBXBuildFile; productRef = AA20000429BB000000000004 /* PostHog */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,8 +59,6 @@
 			files = (
 				AA10000129AA000000000001 /* WhisperKit in Frameworks */,
 				AA10000229AA000000000002 /* KeyboardShortcuts in Frameworks */,
-				AA20000129BB000000000001 /* Sparkle in Frameworks */,
-				AA20000229BB000000000002 /* PostHog in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,8 +121,6 @@
 			packageProductDependencies = (
 				AA10000329AA000000000003 /* WhisperKit */,
 				AA10000429AA000000000004 /* KeyboardShortcuts */,
-				AA20000329BB000000000003 /* Sparkle */,
-				AA20000429BB000000000004 /* PostHog */,
 			);
 			productName = "a3b Buddy";
 			productReference = F9CFB16A2FFA96D300745676 /* a3b Buddy.app */;
@@ -213,8 +207,6 @@
 			packageReferences = (
 				AA10000529AA000000000005 /* XCRemoteSwiftPackageReference "argmax-oss-swift" */,
 				AA10000629AA000000000006 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
-				AA20000529BB000000000005 /* XCRemoteSwiftPackageReference "Sparkle" */,
-				AA20000629BB000000000006 /* XCRemoteSwiftPackageReference "posthog-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F9CFB16B2FFA96D300745676 /* Products */;
@@ -662,22 +654,6 @@
 				minimumVersion = 2.0.0;
 			};
 		};
-		AA20000529BB000000000005 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/sparkle-project/Sparkle";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.9.0;
-			};
-		};
-		AA20000629BB000000000006 /* XCRemoteSwiftPackageReference "posthog-ios" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/PostHog/posthog-ios.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 3.0.0;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -690,16 +666,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA10000629AA000000000006 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
 			productName = KeyboardShortcuts;
-		};
-		AA20000329BB000000000003 /* Sparkle */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AA20000529BB000000000005 /* XCRemoteSwiftPackageReference "Sparkle" */;
-			productName = Sparkle;
-		};
-		AA20000429BB000000000004 /* PostHog */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = AA20000629BB000000000006 /* XCRemoteSwiftPackageReference "posthog-ios" */;
-			productName = PostHog;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -24,10 +24,45 @@ struct CompanionScreenCapture {
 @MainActor
 enum CompanionScreenCaptureUtility {
 
-    /// Captures all connected displays as JPEG data, labeling each with
-    /// whether the user's cursor is on that screen. This gives the AI
-    /// full context across multiple monitors.
-    static func captureAllScreensAsJPEG() async throws -> [CompanionScreenCapture] {
+    static func captureScreensAsJPEG(
+        mode: CompanionCaptureMode,
+        privacyGate: CompanionCapturePrivacyGate = CompanionCapturePrivacyGate(),
+        auditLogger: SentFrameAuditLogger = SentFrameAuditLogger()
+    ) async throws -> CompanionScreenCaptureResult {
+        let frontmostBundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+
+        switch privacyGate.evaluate(frontmostBundleIdentifier: frontmostBundleIdentifier) {
+        case .allowed:
+            break
+        case .blocked(let captureBlock):
+            print("CAPTURE_BLOCKED bundle_id=\(captureBlock.bundleIdentifier) rule=\(captureBlock.matchedRule)")
+            return .blocked(captureBlock)
+        }
+
+        let capturedScreens: [CompanionScreenCapture]
+        switch mode {
+        case .activeWindow:
+            capturedScreens = try await captureActiveWindowAsJPEG(
+                frontmostBundleIdentifier: frontmostBundleIdentifier
+            )
+        case .fullScreen:
+            capturedScreens = try await captureFullScreensAsJPEG()
+        }
+
+        for capturedScreen in capturedScreens {
+            try auditLogger.saveSentFrame(
+                imageData: capturedScreen.imageData,
+                captureMode: mode,
+                sourceIdentifier: capturedScreen.label
+            )
+        }
+
+        print("CAPTURE_ALLOWED bundle_id=\(frontmostBundleIdentifier ?? "unknown") mode=\(mode.rawValue)")
+        CompanionCaptureIndicatorNotifier.postCaptureSucceeded(mode: mode)
+        return .captured(capturedScreens)
+    }
+
+    private static func captureFullScreensAsJPEG() async throws -> [CompanionScreenCapture] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
         guard !content.displays.isEmpty else {
@@ -72,7 +107,7 @@ enum CompanionScreenCaptureUtility {
         for (displayIndex, display) in sortedDisplays.enumerated() {
             // Use NSScreen.frame (AppKit coordinates, bottom-left origin) so
             // displayFrame is in the same coordinate system as NSEvent.mouseLocation
-            // and the overlay window's screenFrame in BlueCursorView.
+            // and the overlay window's screenFrame in A3BBuddyOverlayView.
             let displayFrame = nsScreenByDisplayID[display.displayID]?.frame
                 ?? CGRect(x: display.frame.origin.x, y: display.frame.origin.y,
                           width: CGFloat(display.width), height: CGFloat(display.height))
@@ -128,5 +163,73 @@ enum CompanionScreenCaptureUtility {
         }
 
         return capturedScreens
+    }
+
+    private static func captureActiveWindowAsJPEG(
+        frontmostBundleIdentifier: String?
+    ) async throws -> [CompanionScreenCapture] {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+
+        guard let frontmostBundleIdentifier, !frontmostBundleIdentifier.isEmpty else {
+            throw NSError(domain: "CompanionScreenCapture", code: -3,
+                          userInfo: [NSLocalizedDescriptionKey: "No frontmost app available for capture"])
+        }
+
+        let ownBundleIdentifier = Bundle.main.bundleIdentifier
+        let matchingWindows = content.windows.filter { window in
+            guard window.owningApplication?.bundleIdentifier == frontmostBundleIdentifier else {
+                return false
+            }
+            guard window.owningApplication?.bundleIdentifier != ownBundleIdentifier else {
+                return false
+            }
+            return window.frame.width > 1 && window.frame.height > 1
+        }
+
+        guard let activeWindow = matchingWindows.first else {
+            throw NSError(domain: "CompanionScreenCapture", code: -4,
+                          userInfo: [NSLocalizedDescriptionKey: "No capturable active window found"])
+        }
+
+        let filter = SCContentFilter(desktopIndependentWindow: activeWindow)
+
+        let configuration = SCStreamConfiguration()
+        let maxDimension = 1280
+        let windowWidth = max(Int(activeWindow.frame.width), 1)
+        let windowHeight = max(Int(activeWindow.frame.height), 1)
+        let aspectRatio = CGFloat(windowWidth) / CGFloat(windowHeight)
+        if windowWidth >= windowHeight {
+            configuration.width = maxDimension
+            configuration.height = Int(CGFloat(maxDimension) / aspectRatio)
+        } else {
+            configuration.height = maxDimension
+            configuration.width = Int(CGFloat(maxDimension) * aspectRatio)
+        }
+
+        let cgImage = try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: configuration
+        )
+
+        guard let jpegData = NSBitmapImageRep(cgImage: cgImage)
+                .representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
+            throw NSError(domain: "CompanionScreenCapture", code: -5,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to encode active window capture"])
+        }
+
+        let windowTitle = activeWindow.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let windowLabelSuffix = windowTitle?.isEmpty == false ? " - \(windowTitle!)" : ""
+        let windowLabel = "active window only\(windowLabelSuffix)"
+
+        return [CompanionScreenCapture(
+            imageData: jpegData,
+            label: windowLabel,
+            isCursorScreen: true,
+            displayWidthInPoints: windowWidth,
+            displayHeightInPoints: windowHeight,
+            displayFrame: activeWindow.frame,
+            screenshotWidthInPixels: configuration.width,
+            screenshotHeightInPixels: configuration.height
+        )]
     }
 }

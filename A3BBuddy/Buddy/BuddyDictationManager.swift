@@ -14,6 +14,72 @@ import Foundation
 import Speech
 
 enum BuddyPushToTalkShortcut {
+    enum ShortcutOption {
+        case shiftFunction
+        case controlOption
+        case shiftControl
+        case controlOptionSpace
+        case shiftControlSpace
+
+        var displayText: String {
+            switch self {
+            case .shiftFunction:
+                return "shift + fn"
+            case .controlOption:
+                return "ctrl + option"
+            case .shiftControl:
+                return "shift + control"
+            case .controlOptionSpace:
+                return "ctrl + option + space"
+            case .shiftControlSpace:
+                return "shift + control + space"
+            }
+        }
+
+        var keyCapsuleLabels: [String] {
+            switch self {
+            case .shiftFunction:
+                return ["shift", "fn"]
+            case .controlOption:
+                return ["ctrl", "option"]
+            case .shiftControl:
+                return ["shift", "control"]
+            case .controlOptionSpace:
+                return ["ctrl", "option", "space"]
+            case .shiftControlSpace:
+                return ["shift", "control", "space"]
+            }
+        }
+
+        fileprivate var modifierOnlyFlags: NSEvent.ModifierFlags? {
+            switch self {
+            case .shiftFunction:
+                return [.shift, .function]
+            case .controlOption:
+                return [.control, .option]
+            case .shiftControl:
+                return [.shift, .control]
+            case .controlOptionSpace, .shiftControlSpace:
+                return nil
+            }
+        }
+
+        fileprivate var spaceShortcutModifierFlags: NSEvent.ModifierFlags? {
+            switch self {
+            case .shiftFunction:
+                return nil
+            case .controlOption:
+                return nil
+            case .shiftControl:
+                return nil
+            case .controlOptionSpace:
+                return [.control, .option]
+            case .shiftControlSpace:
+                return [.shift, .control]
+            }
+        }
+    }
+
     enum ShortcutTransition {
         case none
         case pressed
@@ -26,18 +92,10 @@ enum BuddyPushToTalkShortcut {
         case keyUp
     }
 
-    private static let modifierOnlyFlagMask: NSEvent.ModifierFlags = [.control, .command, .option, .shift, .function]
-
-    static var pushToTalkDisplayText: String {
-        let shortcut = currentModifierOnlyShortcut
-        guard shortcut != .off else { return "custom shortcut" }
-
-        return shortcut.keyCapsuleLabels.joined(separator: " + ")
-    }
-
-    static var pushToTalkTooltipText: String {
-        "push to talk (\(pushToTalkDisplayText))"
-    }
+    static let currentShortcutOption: ShortcutOption = .controlOption
+    static let pushToTalkKeyCode: UInt16 = 49 // Space
+    static let pushToTalkDisplayText = currentShortcutOption.displayText
+    static let pushToTalkTooltipText = "push to talk (\(pushToTalkDisplayText))"
 
     static func shortcutTransition(
         for event: NSEvent,
@@ -102,27 +160,42 @@ enum BuddyPushToTalkShortcut {
         modifierFlags: NSEvent.ModifierFlags,
         wasShortcutPreviouslyPressed: Bool
     ) -> ShortcutTransition {
-        guard shortcutEventType == .flagsChanged,
-              let modifierOnlyFlags = currentModifierOnlyShortcut.flags else {
+        if let modifierOnlyFlags = currentShortcutOption.modifierOnlyFlags {
+            guard shortcutEventType == .flagsChanged else { return .none }
+
+            let isShortcutCurrentlyPressed = modifierFlags.contains(modifierOnlyFlags)
+
+            if isShortcutCurrentlyPressed && !wasShortcutPreviouslyPressed {
+                return .pressed
+            }
+
+            if !isShortcutCurrentlyPressed && wasShortcutPreviouslyPressed {
+                return .released
+            }
+
             return .none
         }
 
-        let activeModifierFlags = modifierFlags.intersection(modifierOnlyFlagMask)
-        let isShortcutCurrentlyPressed = activeModifierFlags.isSuperset(of: modifierOnlyFlags)
+        guard let pushToTalkModifierFlags = currentShortcutOption.spaceShortcutModifierFlags else {
+            return .none
+        }
 
-        if isShortcutCurrentlyPressed && !wasShortcutPreviouslyPressed {
+        let matchesModifierFlags = modifierFlags.isSuperset(of: pushToTalkModifierFlags)
+
+        if shortcutEventType == .keyDown
+            && keyCode == pushToTalkKeyCode
+            && matchesModifierFlags
+            && !wasShortcutPreviouslyPressed {
             return .pressed
         }
 
-        if !isShortcutCurrentlyPressed && wasShortcutPreviouslyPressed {
+        if shortcutEventType == .keyUp
+            && keyCode == pushToTalkKeyCode
+            && wasShortcutPreviouslyPressed {
             return .released
         }
 
         return .none
-    }
-
-    private static var currentModifierOnlyShortcut: ModifierOnlyShortcut {
-        ModifierOnlyShortcut.current(for: PrefKey.pushToTalkModifierOnlyShortcut, default: .controlOption)
     }
 }
 
@@ -578,12 +651,11 @@ final class BuddyDictationManager: NSObject, ObservableObject {
 
     private func buildTranscriptionKeyterms() -> [String] {
         let baseKeyterms = [
-            "makesomething",
+            "a3b-buddy",
             "Learning Buddy",
             "Codex",
             "Claude",
             "Anthropic",
-            "OpenAI",
             "SwiftUI",
             "Xcode",
             "Vercel",

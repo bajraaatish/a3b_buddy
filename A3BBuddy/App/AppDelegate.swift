@@ -2,11 +2,13 @@
 //  AppDelegate.swift
 //  a3b Buddy — integration layer
 //
-//  Owns both feature graphs after the Whisper + Clicky merge:
+//  Owns both feature graphs after the Whisper + a3b-buddy merge:
 //  - Whisper dictation: engine, store, stats, pill panel, onboarding.
 //    ActiveEngine is the one line that flips from mock to real.
-//  - Clicky companion: CompanionManager pipeline plus MenuBarPanelManager,
-//    which provides the app's single menu bar status item.
+//  - a3b-buddy companion: CompanionManager pipeline plus MenuBarPanelManager,
+//    which provides the app's single menu bar status item. The companion is
+//    fully local — WhisperKit STT helper, the `claude` CLI brain, and local
+//    TTS — so there is no Cloudflare Worker, Sparkle, or analytics here.
 //
 //  The Whisper history/insights window is created here as a plain NSWindow
 //  (same pattern as the onboarding window) because the menu bar panel —
@@ -15,7 +17,6 @@
 
 import AppKit
 import ServiceManagement
-import Sparkle
 import SwiftUI
 
 typealias ActiveEngine = RealDictationEngine
@@ -45,11 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: NSWindow?
     private var mainWindow: NSWindow?
 
-    // MARK: Clicky companion graph
+    // MARK: a3b-buddy companion graph
 
     private var menuBarPanelManager: MenuBarPanelManager?
     private let companionManager = CompanionManager()
-    private var sparkleUpdaterController: SPUStandardUpdaterController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Whisper launch work
@@ -58,10 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wireHotkeys()
         Task { await engine.prepare() }
 
-        // Clicky launch work (from the former CompanionAppDelegate)
+        // Companion launch work (from the former CompanionAppDelegate)
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 0])
-        ClickyAnalytics.configure()
-        ClickyAnalytics.trackAppOpened()
         menuBarPanelManager = MenuBarPanelManager(
             companionManager: companionManager,
             whisperBridge: makeWhisperMenuBridge()
@@ -73,7 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menuBarPanelManager?.showPanelOnLaunch()
         }
         registerAsLoginItemIfNeeded()
-        // startSparkleUpdater()
 
         if !UserDefaults.standard.bool(forKey: PrefKey.hasOnboarded) {
             showOnboarding()
@@ -84,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         companionManager.stop()
     }
 
-    // MARK: Menu bar bridge (Whisper actions inside the Clicky panel)
+    // MARK: Menu bar bridge (Whisper actions inside the companion panel)
 
     private func makeWhisperMenuBridge() -> WhisperMenuBridge {
         WhisperMenuBridge(
@@ -163,7 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     #endif
 
-    // MARK: Login item (from Clicky)
+    // MARK: Login item
 
     /// Registers the app as a login item so it launches automatically on
     /// startup. Uses SMAppService which shows the app in System Settings >
@@ -177,21 +174,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 print("⚠️ a3b Buddy: Failed to register as login item: \(error)")
             }
-        }
-    }
-
-    private func startSparkleUpdater() {
-        let updaterController = SPUStandardUpdaterController(
-            startingUpdater: false,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
-        self.sparkleUpdaterController = updaterController
-
-        do {
-            try updaterController.updater.start()
-        } catch {
-            print("⚠️ a3b Buddy: Sparkle updater failed to start: \(error)")
         }
     }
 

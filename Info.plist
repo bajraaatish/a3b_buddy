@@ -4,12 +4,8 @@
 <dict>
 	<key>LSUIElement</key>
 	<true/>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/julianjear/makesomething-mac-app/main/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>/l3d2rw5ZZFRU3AadP/w2Zf8FHfhA6bKv16BQOV5OSk=</string>
 	<key>VoiceTranscriptionProvider</key>
-	<string>assemblyai</string>
+	<string>whisperkit</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>a3b Buddy uses the microphone to transcribe your dictation locally and to let you talk to your companion.</string>
 	<key>NSScreenCaptureUsageDescription</key>

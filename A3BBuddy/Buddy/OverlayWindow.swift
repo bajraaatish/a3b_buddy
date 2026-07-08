@@ -2,13 +2,12 @@
 //  OverlayWindow.swift
 //  leanring-buddy
 //
-//  System-wide transparent overlay window for blue glowing cursor.
+//  System-wide transparent overlay window for the a3b cursor buddy.
 //  One OverlayWindow is created per screen so the cursor buddy
 //  seamlessly follows the cursor across multiple monitors.
 //
 
 import AppKit
-import AVFoundation
 import SwiftUI
 
 class OverlayWindow: NSWindow {
@@ -52,24 +51,6 @@ class OverlayWindow: NSWindow {
     }
 }
 
-// Cursor-like triangle shape (equilateral)
-struct Triangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let size = min(rect.width, rect.height)
-        let height = size * sqrt(3.0) / 2.0
-
-        // Top vertex
-        path.move(to: CGPoint(x: rect.midX, y: rect.midY - height / 1.5))
-        // Bottom left vertex
-        path.addLine(to: CGPoint(x: rect.midX - size / 2, y: rect.midY + height / 3))
-        // Bottom right vertex
-        path.addLine(to: CGPoint(x: rect.midX + size / 2, y: rect.midY + height / 3))
-        path.closeSubpath()
-        return path
-    }
-}
-
 // PreferenceKey for tracking bubble size
 struct SizePreferenceKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
@@ -96,13 +77,13 @@ enum BuddyNavigationMode {
     case pointingAtTarget
 }
 
-// SwiftUI view for the blue glowing cursor pointer.
-// Each screen gets its own BlueCursorView. The view checks whether
+// SwiftUI view for the a3b cursor buddy.
+// Each screen gets its own A3BBuddyOverlayView. The view checks whether
 // the cursor is currently on THIS screen and only shows the buddy
-// triangle when it is. During voice interaction, the triangle is
+// mark when it is. During voice interaction, the mark is
 // replaced by a waveform (listening), spinner (processing), or
 // streaming text bubble (responding).
-struct BlueCursorView: View {
+struct A3BBuddyOverlayView: View {
     let screenFrame: CGRect
     let isFirstAppearance: Bool
     @ObservedObject var companionManager: CompanionManager
@@ -165,12 +146,7 @@ struct BlueCursorView: View {
     /// Only during the return flight can cursor movement cancel the animation.
     @State private var isReturningToCursor: Bool = false
 
-    // MARK: - Onboarding Video Layout
-
-    private let onboardingVideoPlayerWidth: CGFloat = 330
-    private let onboardingVideoPlayerHeight: CGFloat = 186
-
-    private let fullWelcomeMessage = "hey! i'm clicky"
+    private let fullWelcomeMessage = "hey! i'm a3b-buddy"
 
     private let navigationPointerPhrases = [
         "right here!",
@@ -195,8 +171,8 @@ struct BlueCursorView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 6, x: 0, y: 0)
+                            .fill(DS.Colors.overlayCursorWine)
+                            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.5), radius: 6, x: 0, y: 0)
                     )
                     .fixedSize()
                     .overlay(
@@ -214,23 +190,7 @@ struct BlueCursorView: View {
                     }
             }
 
-            // Onboarding video — always in the view tree so opacity animation works
-            // reliably. When no player exists or opacity is 0, nothing is visible.
-            // allowsHitTesting(false) prevents it from intercepting clicks.
-            OnboardingVideoPlayerView(player: companionManager.onboardingVideoPlayer)
-                .frame(width: onboardingVideoPlayerWidth, height: onboardingVideoPlayerHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .shadow(color: Color.black.opacity(0.4 * companionManager.onboardingVideoOpacity), radius: 12, x: 0, y: 6)
-                .opacity(isCursorOnThisScreen ? companionManager.onboardingVideoOpacity : 0)
-                .position(
-                    x: cursorPosition.x + 10 + (onboardingVideoPlayerWidth / 2),
-                    y: cursorPosition.y + 18 + (onboardingVideoPlayerHeight / 2)
-                )
-                .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
-                .animation(.easeInOut(duration: 2.0), value: companionManager.onboardingVideoOpacity)
-                .allowsHitTesting(false)
-
-            // Onboarding prompt — "press control + option and say hi" streamed after video ends
+            // Onboarding prompt — "press control + option and say hi" streamed after the intro starts.
             if isCursorOnThisScreen && companionManager.showOnboardingPrompt && !companionManager.onboardingPromptText.isEmpty {
                 Text(companionManager.onboardingPromptText)
                     .font(.system(size: 11, weight: .medium))
@@ -239,8 +199,8 @@ struct BlueCursorView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
-                            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.5), radius: 6, x: 0, y: 0)
+                            .fill(DS.Colors.overlayCursorWine)
+                            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.5), radius: 6, x: 0, y: 0)
                     )
                     .fixedSize()
                     .overlay(
@@ -269,9 +229,9 @@ struct BlueCursorView: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(DS.Colors.overlayCursorBlue)
+                            .fill(DS.Colors.overlayCursorWine)
                             .shadow(
-                                color: DS.Colors.overlayCursorBlue.opacity(0.5 + (1.0 - navigationBubbleScale) * 1.0),
+                                color: DS.Colors.overlayCursorWine.opacity(0.5 + (1.0 - navigationBubbleScale) * 1.0),
                                 radius: 6 + (1.0 - navigationBubbleScale) * 16,
                                 x: 0, y: 0
                             )
@@ -294,7 +254,7 @@ struct BlueCursorView: View {
                     }
             }
 
-            // Blue triangle cursor — shown when idle or while TTS is playing (responding).
+            // a3b mark — shown when idle or while TTS is playing (responding).
             // All three states (triangle, waveform, spinner) stay in the view tree
             // permanently and cross-fade via opacity so SwiftUI doesn't remove/re-insert
             // them (which caused a visible cursor "pop").
@@ -302,13 +262,24 @@ struct BlueCursorView: View {
             // During cursor following: fast spring animation for snappy tracking.
             // During navigation: NO implicit animation — the frame-by-frame bezier
             // timer controls position directly at 60fps for a smooth arc flight.
-            Triangle()
-                .fill(DS.Colors.overlayCursorBlue)
-                .frame(width: 16, height: 16)
-                .rotationEffect(.degrees(triangleRotationDegrees))
-                .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.55), radius: 3 + (buddyFlightScale - 1.0) * 8, x: 0, y: 0)
-                .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.38), radius: 7 + (buddyFlightScale - 1.0) * 14, x: 0, y: 0)
-                .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.24), radius: 13 + (buddyFlightScale - 1.0) * 22, x: 0, y: 0)
+            Image("a3b-menu-icon")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                // The a3b mark's tip points RIGHT at 0°, but every rotation in
+                // this file (flight tangent +90°, pointing angle -35°) was tuned
+                // for the original triangle whose tip pointed UP at 0°. The -90°
+                // baseline maps the new asset into that basis — without it the
+                // arrow aims 90° clockwise off and appears to point at the UI
+                // element next to the real target.
+                .rotationEffect(.degrees(triangleRotationDegrees - 90))
+                .shadow(
+                    color: DS.Colors.overlayCursorWine.opacity(0.65),
+                    radius: 8 + (buddyFlightScale - 1.0) * 18,
+                    x: 0,
+                    y: 0
+                )
                 .scaleEffect(buddyFlightScale)
                 .opacity(buddyIsVisibleOnThisScreen && (companionManager.voiceState == .idle || companionManager.voiceState == .responding) ? cursorOpacity : 0)
                 .position(cursorPosition)
@@ -324,15 +295,15 @@ struct BlueCursorView: View {
                     value: triangleRotationDegrees
                 )
 
-            // Blue waveform — replaces the triangle while listening
-            BlueCursorWaveformView(audioPowerLevel: companionManager.currentAudioPowerLevel)
+            // Wine waveform — replaces the a3b mark while listening
+            A3BBuddyWaveformView(audioPowerLevel: companionManager.currentAudioPowerLevel)
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .listening ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
                 .animation(.easeIn(duration: 0.15), value: companionManager.voiceState)
 
-            // Blue spinner — shown while the AI is processing (transcription + Claude + waiting for TTS)
-            BlueCursorSpinnerView()
+            // Wine spinner — shown while the AI is processing (transcription + Claude + waiting for TTS)
+            A3BBuddySpinnerView()
                 .opacity(buddyIsVisibleOnThisScreen && companionManager.voiceState == .processing ? cursorOpacity : 0)
                 .position(cursorPosition)
                 .animation(.spring(response: 0.2, dampingFraction: 0.6, blendDuration: 0), value: cursorPosition)
@@ -397,7 +368,7 @@ struct BlueCursorView: View {
     private var buddyIsVisibleOnThisScreen: Bool {
         switch buddyNavigationMode {
         case .followingCursor:
-            // If another screen's BlueCursorView is navigating to an element,
+            // If another screen's A3BBuddyOverlayView is navigating to an element,
             // hide the cursor on this screen to prevent a duplicate buddy
             if companionManager.detectedElementScreenLocation != nil {
                 return false
@@ -691,7 +662,7 @@ struct BlueCursorView: View {
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
                     self.showWelcome = false
-                    // Start the onboarding video right after the welcome text disappears
+                    // Start the onboarding intro right after the welcome text disappears
                     self.companionManager.setupOnboardingVideo()
                 }
                 return
@@ -704,11 +675,11 @@ struct BlueCursorView: View {
     }
 }
 
-// MARK: - Blue Cursor Waveform
+// MARK: - a3b Buddy Waveform
 
-/// A small blue waveform that replaces the triangle cursor while
+/// A small wine waveform that replaces the a3b mark while
 /// the user is holding the push-to-talk shortcut and speaking.
-private struct BlueCursorWaveformView: View {
+private struct A3BBuddyWaveformView: View {
     let audioPowerLevel: CGFloat
 
     private let barCount = 5
@@ -719,7 +690,7 @@ private struct BlueCursorWaveformView: View {
             HStack(alignment: .center, spacing: 2) {
                 ForEach(0..<barCount, id: \.self) { barIndex in
                     RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                        .fill(DS.Colors.overlayCursorBlue)
+                        .fill(DS.Colors.overlayCursorWine)
                         .frame(
                             width: 2,
                             height: barHeight(
@@ -729,7 +700,7 @@ private struct BlueCursorWaveformView: View {
                         )
                 }
             }
-            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.6), radius: 6, x: 0, y: 0)
+            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.6), radius: 6, x: 0, y: 0)
             .animation(.linear(duration: 0.08), value: audioPowerLevel)
         }
     }
@@ -744,11 +715,11 @@ private struct BlueCursorWaveformView: View {
     }
 }
 
-// MARK: - Blue Cursor Spinner
+// MARK: - a3b Buddy Spinner
 
-/// A small blue spinning indicator that replaces the triangle cursor
+/// A small wine spinning indicator that replaces the a3b mark
 /// while the AI is processing a voice input.
-private struct BlueCursorSpinnerView: View {
+private struct A3BBuddySpinnerView: View {
     @State private var isSpinning = false
 
     var body: some View {
@@ -757,8 +728,8 @@ private struct BlueCursorSpinnerView: View {
             .stroke(
                 AngularGradient(
                     colors: [
-                        DS.Colors.overlayCursorBlue.opacity(0.0),
-                        DS.Colors.overlayCursorBlue
+                        DS.Colors.overlayCursorWine.opacity(0.0),
+                        DS.Colors.overlayCursorWine
                     ],
                     center: .center
                 ),
@@ -766,7 +737,7 @@ private struct BlueCursorSpinnerView: View {
             )
             .frame(width: 14, height: 14)
             .rotationEffect(.degrees(isSpinning ? 360 : 0))
-            .shadow(color: DS.Colors.overlayCursorBlue.opacity(0.6), radius: 6, x: 0, y: 0)
+            .shadow(color: DS.Colors.overlayCursorWine.opacity(0.6), radius: 6, x: 0, y: 0)
             .onAppear {
                 withAnimation(.linear(duration: 0.8).repeatForever(autoreverses: false)) {
                     isSpinning = true
@@ -794,7 +765,7 @@ class OverlayWindowManager {
         for screen in screens {
             let window = OverlayWindow(screen: screen)
 
-            let contentView = BlueCursorView(
+            let contentView = A3BBuddyOverlayView(
                 screenFrame: screen.frame,
                 isFirstAppearance: isFirstAppearance,
                 companionManager: companionManager
@@ -838,46 +809,5 @@ class OverlayWindowManager {
 
     func isShowingOverlay() -> Bool {
         return !overlayWindows.isEmpty
-    }
-}
-
-// MARK: - Onboarding Video Player
-
-/// NSViewRepresentable wrapping an AVPlayerLayer so HLS video plays
-/// inside SwiftUI. Uses a custom NSView subclass to keep the player
-/// layer sized to the view's bounds automatically.
-private struct OnboardingVideoPlayerView: NSViewRepresentable {
-    let player: AVPlayer?
-
-    func makeNSView(context: Context) -> AVPlayerNSView {
-        let view = AVPlayerNSView()
-        view.player = player
-        return view
-    }
-
-    func updateNSView(_ nsView: AVPlayerNSView, context: Context) {
-        nsView.player = player
-    }
-}
-
-private class AVPlayerNSView: NSView {
-    var player: AVPlayer? {
-        didSet { playerLayer.player = player }
-    }
-
-    private let playerLayer = AVPlayerLayer()
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        playerLayer.videoGravity = .resizeAspectFill
-        layer?.addSublayer(playerLayer)
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func layout() {
-        super.layout()
-        playerLayer.frame = bounds
     }
 }

@@ -31,6 +31,12 @@ struct CompanionPanelView: View {
 
                 modelPickerRow
                     .padding(.horizontal, 16)
+
+                Spacer()
+                    .frame(height: 10)
+
+                captureControlsSection
+                    .padding(.horizontal, 16)
             }
 
             if !companionManager.allPermissionsGranted {
@@ -49,12 +55,12 @@ struct CompanionPanelView: View {
                     .padding(.horizontal, 16)
             }
 
-            // Show Clicky toggle — hidden for now
+            // Show a3b-buddy toggle — hidden for now
             // if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
             //     Spacer()
             //         .frame(height: 16)
             //
-            //     showClickyCursorToggleRow
+            //     showA3BCursorToggleRow
             //         .padding(.horizontal, 16)
             // }
 
@@ -81,10 +87,55 @@ struct CompanionPanelView: View {
         .background(panelBackground)
     }
 
+    // MARK: - Whisper Dictation (merged app: dictation menu actions live here)
+
+    private var whisperSection: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            WhisperDictationStatusRow(engine: whisperBridge.engine)
+
+            whisperActionRow(icon: "clock.arrow.circlepath", label: "History & Insights") {
+                whisperBridge.openMainWindow()
+                NotificationCenter.default.post(name: .a3bDismissPanel, object: nil)
+            }
+
+            whisperActionRow(icon: "doc.on.clipboard", label: "Paste Last Transcript") {
+                whisperBridge.pasteLastTranscript()
+            }
+            .disabled(!whisperBridge.hasTranscripts())
+            .opacity(whisperBridge.hasTranscripts() ? 1 : 0.4)
+
+            whisperActionRow(icon: "gearshape", label: "Dictation Settings") {
+                whisperBridge.openSettings()
+                NotificationCenter.default.post(name: .a3bDismissPanel, object: nil)
+            }
+        }
+    }
+
+    private func whisperActionRow(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
+                    .frame(width: 16)
+
+                Text(label)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(DS.Colors.textSecondary)
+
+                Spacer()
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .pointerCursor()
+    }
+
     // MARK: - Header
 
     private var panelHeader: some View {
-        HStack {
+        ZStack {
             HStack(spacing: 8) {
                 // Animated status dot
                 Circle()
@@ -92,19 +143,21 @@ struct CompanionPanelView: View {
                     .frame(width: 8, height: 8)
                     .shadow(color: statusDotColor.opacity(0.6), radius: 4)
 
-                Text("a3b Buddy")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(DS.Colors.textPrimary)
+                Text(statusText)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(DS.Colors.textTertiary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
-
-            Text(statusText)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(DS.Colors.textTertiary)
+            Image("a3b-logo")
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: 30, height: 30)
+                .accessibilityLabel("a3b-buddy")
 
             Button(action: {
-                NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+                NotificationCenter.default.post(name: .a3bDismissPanel, object: nil)
             }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
@@ -117,6 +170,7 @@ struct CompanionPanelView: View {
             }
             .buttonStyle(.plain)
             .pointerCursor()
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -132,7 +186,7 @@ struct CompanionPanelView: View {
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else if companionManager.allPermissionsGranted {
-            Text("You're all set. Hit Start to meet your buddy.")
+            Text("You're all set. Hit Start to meet a3b-buddy.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -143,7 +197,7 @@ struct CompanionPanelView: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(DS.Colors.textSecondary)
 
-                Text("Some permissions were revoked. Grant all four below to keep using Clicky.")
+                Text("Some permissions were revoked. Grant them below to keep using a3b-buddy.")
                     .font(.system(size: 11))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -151,16 +205,16 @@ struct CompanionPanelView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Meet your buddy.")
+                Text("Hi, I'm a3b-buddy.")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(DS.Colors.textSecondary)
 
-                Text("Hold your push-to-talk keys and talk to it about whatever is on your screen.")
+                Text("A screen-aware companion for working through what is on your Mac.")
                     .font(.system(size: 11))
                     .foregroundColor(DS.Colors.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Nothing runs in the background. It only takes a screenshot when you press the hotkey, so you can grant that permission in peace.")
+                Text("Nothing runs in the background. a3b-buddy only captures the screen when you press the hot key.")
                     .font(.system(size: 11))
                     .foregroundColor(Color(red: 0.9, green: 0.4, blue: 0.4))
                     .fixedSize(horizontal: false, vertical: true)
@@ -174,21 +228,21 @@ struct CompanionPanelView: View {
     @ViewBuilder
     private var startButton: some View {
         if !companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
-            Button(action: {
-                companionManager.triggerOnboarding()
-            }) {
-                Text("Start")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(DS.Colors.textOnAccent)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous)
-                            .fill(DS.Colors.accent)
-                    )
-            }
-            .buttonStyle(.plain)
-            .pointerCursor()
+                Button(action: {
+                    companionManager.triggerOnboarding()
+                }) {
+                    Text("Start")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(DS.Colors.textOnAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: DS.CornerRadius.large, style: .continuous)
+                                .fill(DS.Colors.accent)
+                        )
+                }
+                .buttonStyle(.plain)
+                .pointerCursor()
         }
     }
 
@@ -497,9 +551,9 @@ struct CompanionPanelView: View {
 
 
 
-    // MARK: - Show Clicky Cursor Toggle
+    // MARK: - Show a3b-buddy Cursor Toggle
 
-    private var showClickyCursorToggleRow: some View {
+    private var showA3BCursorToggleRow: some View {
         HStack {
             HStack(spacing: 8) {
                 Image(systemName: "cursorarrow")
@@ -507,7 +561,7 @@ struct CompanionPanelView: View {
                     .foregroundColor(DS.Colors.textTertiary)
                     .frame(width: 16)
 
-                Text("Show Clicky")
+                Text("Show a3b-buddy")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(DS.Colors.textSecondary)
             }
@@ -515,8 +569,8 @@ struct CompanionPanelView: View {
             Spacer()
 
             Toggle("", isOn: Binding(
-                get: { companionManager.isClickyCursorEnabled },
-                set: { companionManager.setClickyCursorEnabled($0) }
+                get: { companionManager.isA3BCursorEnabled },
+                set: { companionManager.setA3BCursorEnabled($0) }
             ))
             .toggleStyle(.switch)
             .labelsHidden()
@@ -559,8 +613,14 @@ struct CompanionPanelView: View {
             Spacer()
 
             HStack(spacing: 0) {
-                modelOptionButton(label: "Sonnet", modelID: "claude-sonnet-4-6")
-                modelOptionButton(label: "Opus", modelID: "claude-opus-4-6")
+                modelOptionButton(label: "Sonnet 5", modelID: "claude-sonnet-5")
+                modelOptionButton(label: "Opus 4.8", modelID: "claude-opus-4-8")
+                if SubscriptionCodexProvider.isInstalled {
+                    modelOptionButton(label: "Codex", modelID: "gpt-codex")
+                }
+                if SubscriptionGeminiProvider.isInstalled {
+                    modelOptionButton(label: "Gemini", modelID: "gemini")
+                }
             }
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -593,46 +653,95 @@ struct CompanionPanelView: View {
         .pointerCursor()
     }
 
-    // MARK: - Whisper Dictation (merged app: dictation menu actions live in this panel)
+    // MARK: - Capture Controls
 
-    private var whisperSection: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            WhisperDictationStatusRow(engine: whisperBridge.engine)
+    private var captureControlsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("CAPTURE")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(DS.Colors.textTertiary)
 
-            whisperActionRow(icon: "clock.arrow.circlepath", label: "History & Insights") {
-                whisperBridge.openMainWindow()
-                NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+            HStack(spacing: 0) {
+                captureModeOptionButton(
+                    label: "Active window",
+                    iconName: "macwindow",
+                    captureMode: .activeWindow
+                )
+
+                captureModeOptionButton(
+                    label: "Full screen",
+                    iconName: "rectangle.on.rectangle",
+                    captureMode: .fullScreen
+                )
             }
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+            )
 
-            whisperActionRow(icon: "doc.on.clipboard", label: "Paste Last Transcript") {
-                whisperBridge.pasteLastTranscript()
-            }
-            .disabled(!whisperBridge.hasTranscripts())
-            .opacity(whisperBridge.hasTranscripts() ? 1 : 0.4)
+            Button(action: {
+                SentFramesFolderOpener.openSentFramesFolder()
+            }) {
+                HStack(spacing: 7) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11, weight: .medium))
 
-            whisperActionRow(icon: "gearshape", label: "Dictation Settings") {
-                whisperBridge.openSettings()
-                NotificationCenter.default.post(name: .clickyDismissPanel, object: nil)
+                    Text("Open sent-frames folder")
+                        .font(.system(size: 12, weight: .medium))
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundColor(DS.Colors.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(DS.Colors.borderSubtle, lineWidth: 0.5)
+                )
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.plain)
+            .pointerCursor()
         }
+        .padding(.vertical, 4)
     }
 
-    private func whisperActionRow(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(DS.Colors.textTertiary)
-                    .frame(width: 16)
+    private func captureModeOptionButton(
+        label: String,
+        iconName: String,
+        captureMode: CompanionCaptureMode
+    ) -> some View {
+        let isSelected = companionManager.selectedCaptureMode == captureMode
+        return Button(action: {
+            companionManager.setSelectedCaptureMode(captureMode)
+        }) {
+            HStack(spacing: 5) {
+                Image(systemName: iconName)
+                    .font(.system(size: 10, weight: .semibold))
 
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(DS.Colors.textSecondary)
-
-                Spacer()
+                    .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
+            .foregroundColor(isSelected ? DS.Colors.textPrimary : DS.Colors.textTertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(isSelected ? Color.white.opacity(0.1) : Color.clear)
+            )
         }
         .buttonStyle(.plain)
         .pointerCursor()
@@ -648,7 +757,7 @@ struct CompanionPanelView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "power")
                         .font(.system(size: 11, weight: .medium))
-                    Text("Quit a3b Buddy")
+                    Text("Quit a3b-buddy")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundColor(DS.Colors.textTertiary)
@@ -656,7 +765,6 @@ struct CompanionPanelView: View {
             .buttonStyle(.plain)
             .pointerCursor()
 
-            Spacer()
         }
     }
 
@@ -677,9 +785,9 @@ struct CompanionPanelView: View {
         case .idle:
             return DS.Colors.success
         case .listening:
-            return DS.Colors.blue400
+            return DS.Colors.accentText
         case .processing, .responding:
-            return DS.Colors.blue400
+            return DS.Colors.accentText
         }
     }
 
