@@ -81,6 +81,13 @@ final class HotkeyBindingStore: ObservableObject {
         return slot < list.count ? list[slot] : nil
     }
 
+    /// Glyphs for the feature's primary trigger — "⌃⌥", "⌥Space", "fn" — for UI
+    /// copy that used to hardcode the shortcut. `nil` when the user cleared every
+    /// binding; callers supply their own "your push-to-talk key" fallback.
+    func primaryDisplayString(for feature: HotkeyFeature) -> String? {
+        bindings(for: feature).first?.displayString
+    }
+
     /// True when any binding anywhere is a bare-modifier hold — the only
     /// reason this app needs Input Monitoring.
     var needsInputMonitoring: Bool {

@@ -214,7 +214,8 @@ struct A3BBuddyOverlayView: View {
                     }
             }
 
-            // Onboarding prompt — "press control + option and say hi" streamed after the intro starts.
+            // Onboarding prompt — streamed after the intro starts, using whatever
+            // push-to-talk is currently bound to (see startOnboardingPromptStream).
             if isCursorOnThisScreen && companionManager.showOnboardingPrompt && !companionManager.onboardingPromptText.isEmpty {
                 Text(companionManager.onboardingPromptText)
                     .font(.system(size: 11, weight: .medium))

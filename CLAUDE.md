@@ -29,7 +29,10 @@ verification/wiring-requests/   agents that may not touch app-entry files leave 
 - `AppDelegate` owns both graphs: Whisper (engine/store/stats/pill/onboarding) and Clicky (CompanionManager + MenuBarPanelManager).
 - **One menu bar icon**: Clicky's `MenuBarPanelManager` NSStatusItem. Whisper's MenuBarExtra is gone; its menu actions live in the panel via `WhisperMenuBridge` (App/WhisperMenuBridge.swift).
 - Whisper's history/insights window is a plain NSWindow made in `AppDelegate.openMainWindow()` (was a SwiftUI Window scene; panel is AppKit and can't use openWindow).
-- Two listen-only CGEventTaps coexist: Whisper `Hotkey/HotkeyManager` and Clicky `Buddy/GlobalPushToTalkShortcutMonitor`. Hotkey defaults: dictation = hold ⌃ (or ⌥Space combo), push-to-talk = hold ⌃⌥. Whisper's tap is exact-match and cancels when another modifier joins, so ⌃⌥ reaches Clicky only.
+- Hotkeys are user-bindable, stored as `[HotkeyBinding]` JSON (`hotkey.dictation`, `hotkey.pushToTalk`) via `Hotkey/HotkeyBindingStore`. Defaults are **disjoint**: dictation = hold ⌃⇧, push-to-talk = hold ⌃⌥ (neither is a prefix of the other, so neither waits on a grace timer). `HotkeyConflictChecker` gates every rebind — `.warn` is saveable, `.block` isn't. See `BUDDY-V3-PLAN.md`.
+- Two listen-only CGEventTaps still coexist: Whisper `Hotkey/HotkeyManager` and Clicky `Buddy/GlobalPushToTalkShortcutMonitor`. Both read the store through the temporary `Hotkey/HotkeyBindingBridge`. Whisper's tap is exact-match and cancels when another modifier joins, so ⌃⌥ reaches Clicky only. `Hotkey/HotkeyEngine` will replace both taps and the bridge — see `docs/hotkey-engine-design.md`.
+- Combo bindings are registered with Carbon via `KeyboardShortcuts`; bare-modifier holds are matched in the event tap. Carbon *consumes* a keystroke, a listen-only tap only observes, so a combo must never be tap-matched — it would type the character into the field you're dictating into.
+- `KeyboardShortcuts.Name`s carry **no `default:`**. `Name.init` writes its default into UserDefaults as a side effect at static-init time, which races `HotkeyMigration`. Migration is the only seeder.
 - Info.plist strategy: GENERATE_INFOPLIST_FILE=YES **plus** INFOPLIST_FILE=Info.plist. Custom/usage keys go in the file; display name via INFOPLIST_KEY_. Don't put the same key in both.
 
 ## Hard rules (inherited from both apps)

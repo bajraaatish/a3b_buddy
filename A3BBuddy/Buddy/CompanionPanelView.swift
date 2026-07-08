@@ -14,6 +14,14 @@ struct CompanionPanelView: View {
     @ObservedObject var companionManager: CompanionManager
     let whisperBridge: WhisperMenuBridge
 
+    /// Observed so the push-to-talk copy below re-renders when the user rebinds.
+    @ObservedObject private var hotkeyStore = HotkeyBindingStore.shared
+
+    /// "⌃⌥", "⌥Space", "fn" — whatever push-to-talk is actually bound to.
+    private var pushToTalkGlyphs: String {
+        hotkeyStore.primaryDisplayString(for: .pushToTalk) ?? "your push-to-talk key"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             panelHeader
@@ -181,7 +189,7 @@ struct CompanionPanelView: View {
     @ViewBuilder
     private var permissionsCopySection: some View {
         if companionManager.hasCompletedOnboarding && companionManager.allPermissionsGranted {
-            Text("Hold Control+Option to talk.")
+            Text("Hold \(pushToTalkGlyphs) to talk.")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(DS.Colors.textSecondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

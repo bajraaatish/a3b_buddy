@@ -791,7 +791,9 @@ final class CompanionManager: ObservableObject {
     }
 
     private func startOnboardingPromptStream() {
-        let message = "press control + option and introduce yourself"
+        // Typed out on screen, not spoken — glyphs read fine and match macOS.
+        let shortcut = HotkeyBindingStore.shared.primaryDisplayString(for: .pushToTalk) ?? "your push-to-talk key"
+        let message = "press \(shortcut) and introduce yourself"
         onboardingPromptText = ""
         showOnboardingPrompt = true
         onboardingPromptOpacity = 0.0
