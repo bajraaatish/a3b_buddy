@@ -31,6 +31,7 @@ struct ModifierOnlyShortcut: RawRepresentable, CaseIterable, Identifiable, Hasha
 
     static let control = Self(rawValue: "control")!
     static let controlOption = Self(rawValue: "control+option")!
+    static let shift = Self(rawValue: "shift")!
     static let off = Self(rawValue: "off")!
 
     static let allCases: [ModifierOnlyShortcut] = {

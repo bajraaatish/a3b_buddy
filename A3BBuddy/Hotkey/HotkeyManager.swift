@@ -234,11 +234,10 @@ final class HotkeyManager {
     }
 
     private var currentModifierOnlyShortcut: ModifierOnlyShortcut {
-        // Default OFF in the merged app: the bare-⌃ hold would be a prefix of
-        // the companion's ⌃⌥ push-to-talk and fight it for the mic. Dictation
-        // triggers via the ⌥Space combo instead; users can opt back into a
-        // (non-conflicting) hold key from Settings.
-        ModifierOnlyShortcut.current(for: PrefKey.dictationModifierOnlyShortcut, default: .off)
+        // Dictation = hold ⇧ Shift in the merged app. Shift doesn't overlap the
+        // companion's ⌃⌥ push-to-talk, so the two don't fight over the mic.
+        // Users can pick a different hold key (fn/⌘) from Settings.
+        ModifierOnlyShortcut.current(for: PrefKey.dictationModifierOnlyShortcut, default: .shift)
     }
 
     private func releaseHoldShortcutIfNeeded() {
