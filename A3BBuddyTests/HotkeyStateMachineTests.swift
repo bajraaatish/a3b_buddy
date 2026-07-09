@@ -25,8 +25,17 @@ private let fnHold = HotkeyBinding.modifiersOnly(.function)
 private let cmdShiftD = HotkeyBinding.keyCombo(keyCode: UInt16(kVK_ANSI_D), modifiers: [.command, .shift])
 private let optionSpace = HotkeyBinding.keyCombo(keyCode: UInt16(kVK_Space), modifiers: .option)
 
+private let mouse4 = HotkeyBinding.mouseButton(number: 3)
+private let mouse5 = HotkeyBinding.mouseButton(number: 4)
+
 private let keyC = UInt16(kVK_ANSI_C)
 private let escape = UInt16(kVK_Escape)
+
+/// `NSEvent.pressedMouseButtons` is a bitmask, bit N = button N.
+private func buttons(_ numbers: Int...) -> Int {
+    numbers.reduce(0) { $0 | (1 << $1) }
+}
+private let noButtons = 0
 
 private func machine(
     dictation: [HotkeyBinding] = [ctrlShift],
@@ -287,7 +296,7 @@ private let noModifiers: NSEvent.ModifierFlags = []
     @Test func mouseDownDuringGraceDisarms() {
         var state = ambiguousMachine()
         _ = state.flagsChanged([.control])
-        #expect(state.mouseDown().events == [.disarmed(.dictation)])
+        #expect(state.mouseButtonsChanged(1 << 0).events == [.disarmed(.dictation)])
     }
 }
 
@@ -305,14 +314,14 @@ private let noModifiers: NSEvent.ModifierFlags = []
     @Test func mouseDownCancelsAHeldDictation() {
         var state = machine()
         _ = state.flagsChanged([.control, .shift])
-        #expect(state.mouseDown().events == [.cancelled(.dictation, .mouseDown)])
+        #expect(state.mouseButtonsChanged(1 << 0).events == [.cancelled(.dictation, .mouseDown)])
     }
 
     @Test func pushToTalkIgnoresMouseDownAndOtherKeyDown() {
         var state = machine()
         _ = state.flagsChanged([.control, .option])
         #expect(state.keyDown(keyC).events.isEmpty)
-        #expect(state.mouseDown().events.isEmpty)
+        #expect(state.mouseButtonsChanged(1 << 0).events.isEmpty)
         #expect(state.isHeld(.pushToTalk))
     }
 
@@ -506,5 +515,144 @@ private let noModifiers: NSEvent.ModifierFlags = []
         }
         #expect(armed.count == answered.count)
         #expect(armed.count == 2)
+    }
+}
+
+// MARK: - Mouse buttons
+
+@Suite struct HotkeyMouseButtonTests {
+    /// Dictation on Mouse 4, push-to-talk on its usual ⌃⌥ hold.
+    private func mouseMachine(
+        dictation: [HotkeyBinding] = [mouse4],
+        pushToTalk: [HotkeyBinding] = [ctrlOption]
+    ) -> HotkeyStateMachine {
+        machine(dictation: dictation, pushToTalk: pushToTalk)
+    }
+
+    @Test func boundButtonPressesAndReleases() {
+        var state = mouseMachine()
+
+        let down = state.mouseButtonsChanged(buttons(3))
+        #expect(down.events == [.armed(.dictation), .pressed(.dictation, .mouseButton)])
+        #expect(down.consumesEvent)
+        #expect(state.isHeld(.dictation))
+
+        let up = state.mouseButtonsChanged(noButtons)
+        #expect(up.events == [.released(.dictation)])
+        #expect(up.consumesEvent)          // swallow both halves, or the app sees a stray mouse-up
+        #expect(!state.isHeld(.dictation))
+    }
+
+    /// A bound button must not trip the cancel path that any other click does.
+    @Test func boundButtonDoesNotCancelItsOwnFeature() {
+        var state = mouseMachine()
+        _ = state.mouseButtonsChanged(buttons(3))
+        #expect(state.isHeld(.dictation))
+    }
+
+    @Test func unboundClickIsNotConsumedAndStillCancelsDictation() {
+        var state = mouseMachine()
+        _ = state.mouseButtonsChanged(buttons(3))          // dictation held on Mouse 4
+
+        let leftClick = state.mouseButtonsChanged(buttons(3, 0))
+        #expect(leftClick.events == [.cancelled(.dictation, .mouseDown)])
+        // Only bit 0 changed, and nobody bound it — the click must reach the app.
+        #expect(!leftClick.consumesEvent)
+        #expect(!state.isHeld(.dictation))
+    }
+
+    /// Mouse 4 goes up after the hold was already cancelled. There is nothing left
+    /// to release, but the up must still be swallowed: its down was.
+    @Test func theUpOfABoundButtonIsSwallowedEvenWithNoLiveHold() {
+        var state = mouseMachine()
+        _ = state.mouseButtonsChanged(buttons(3))
+        _ = state.mouseButtonsChanged(buttons(3, 0))       // left click cancels dictation
+        let up = state.mouseButtonsChanged(buttons(0))     // Mouse 4 released
+        #expect(up.events.isEmpty)
+        #expect(up.consumesEvent)
+    }
+
+    @Test func plainLeftClickIsNeverConsumed() {
+        var state = mouseMachine()
+        #expect(!state.mouseButtonsChanged(buttons(0)).consumesEvent)
+    }
+
+    /// The hazard this feature creates. Push-to-talk has `cancelsOnMouseDown == false`,
+    /// so without an explicit termination both features would record at once and two
+    /// AVAudioEngines would fight for the input node.
+    @Test func boundButtonEndsTheOtherFeaturesLiveSession() {
+        var state = mouseMachine(dictation: [mouse4], pushToTalk: [ctrlOption])
+        _ = state.flagsChanged([.control, .option])
+        #expect(state.isHeld(.pushToTalk))
+
+        let outcome = state.mouseButtonsChanged(buttons(3))
+        #expect(outcome.events == [
+            .cancelled(.pushToTalk, .mouseDown),
+            .armed(.dictation),
+            .pressed(.dictation, .mouseButton),
+        ])
+        #expect(state.isHeld(.dictation))
+        #expect(!state.isHeld(.pushToTalk))
+    }
+
+    /// A mouse hold owns no modifiers, so modifier traffic must not end it.
+    @Test func modifiersDoNotDisturbAMouseHold() {
+        var state = mouseMachine(dictation: [mouse4], pushToTalk: [])
+        _ = state.mouseButtonsChanged(buttons(3))
+
+        #expect(state.flagsChanged([.control]).events.isEmpty)
+        #expect(state.flagsChanged(noModifiers).events.isEmpty)
+        #expect(state.isHeld(.dictation))
+    }
+
+    @Test func otherKeyDownCancelsAMouseHold() {
+        var state = mouseMachine()
+        _ = state.mouseButtonsChanged(buttons(3))
+        #expect(state.keyDown(keyC).events == [.cancelled(.dictation, .otherKeyDown)])
+    }
+
+    /// The resync after macOS kills the tap: the button came up while we were deaf,
+    /// so the first mask we see again has it clear. The hold must end, not strand.
+    @Test func resyncWithTheButtonAlreadyUpEndsTheHold() {
+        var state = mouseMachine()
+        _ = state.mouseButtonsChanged(buttons(3))
+        #expect(state.mouseButtonsChanged(noButtons).events == [.released(.dictation)])
+        #expect(!state.isHeld(.dictation))
+    }
+
+    /// Both sources deliver when Buddy is frontmost; the second mask is identical.
+    @Test func aRepeatedMaskIsADuplicateAndDoesNothing() {
+        var state = mouseMachine()
+        _ = state.mouseButtonsChanged(buttons(3))
+        #expect(state.mouseButtonsChanged(buttons(3)).events.isEmpty)
+        #expect(state.isHeld(.dictation))
+    }
+
+    @Test func pressWhileAlreadyHeldByModifiersIsIgnored() {
+        var state = mouseMachine(dictation: [ctrlShift, mouse4], pushToTalk: [])
+        _ = state.flagsChanged([.control, .shift])
+        #expect(state.mouseButtonsChanged(buttons(3)).events.isEmpty)
+        #expect(state.isHeld(.dictation))
+    }
+
+    @Test func pushToTalkOnMouse5Works() {
+        var state = mouseMachine(dictation: [ctrlShift], pushToTalk: [mouse5])
+        let outcome = state.mouseButtonsChanged(buttons(4))
+        #expect(outcome.events == [.armed(.pushToTalk), .pressed(.pushToTalk, .mouseButton)])
+        #expect(state.isHeld(.pushToTalk))
+    }
+
+    @Test func aMouseBindingNeedsTheEventTap() {
+        let table = HotkeyMatchTable(bindings: [.dictation: [mouse4], .pushToTalk: []])
+        #expect(table.needsEventTap)
+        #expect(table.hasMouseButtons)
+    }
+
+    /// A mouse binding must never be filed as a Carbon combo — that would shift
+    /// every `KeyboardShortcuts.Name` slot out from under `combo(at:)`.
+    @Test func aMouseBindingIsNotACarbonCombo() {
+        let table = HotkeyMatchTable(bindings: [.dictation: [mouse4, optionSpace], .pushToTalk: []])
+        #expect(table.combo(at: 0, for: .dictation) == optionSpace)
+        #expect(table.combo(at: 1, for: .dictation) == nil)
     }
 }

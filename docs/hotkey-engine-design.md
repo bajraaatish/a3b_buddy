@@ -299,14 +299,30 @@ enum HotkeyEventDisposition { case pass, consume }
 @MainActor
 protocol HotkeyEventSource: AnyObject {
     var onEvent: ((HotkeyRawEvent) -> HotkeyEventDisposition)? { get set }
+    var wantsMouseButtonConsumption: Bool { get set }   // → .defaultTap, needs Accessibility
     func enable() -> Bool          // false ⇒ TCC denied / tapCreate returned nil
     func disable()
     func currentFlags() -> NSEvent.ModifierFlags   // resync after .tapDisabledByTimeout
 }
 ```
-`CGEventTapSource` ignores the disposition (listen-only). `LocalMonitorSource`
-honours it — that's how Esc keeps getting swallowed inside Buddy's own windows,
-replacing `HotkeyManager.swift:186-192`.
+`LocalMonitorSource` always honours the disposition — that's how Esc keeps getting
+swallowed inside Buddy's own windows, replacing `HotkeyManager.swift:186-192`.
+
+`CGEventTapSource` honours it **only for mouse events**, and only when it managed
+to create a `.defaultTap` (which TCC grants on Accessibility; `.listenOnly` needs
+just Accessibility *or* Input Monitoring, and can never consume). Two rules hold
+the design together:
+
+- The upgrade is attempted only when a `.mouseButton` binding exists, and a failed
+  `tapCreate` falls back to `.listenOnly`. Swallowing is worth losing; hotkeys are not.
+- Keyboard events always return `.pass` from the tap. `Outcome.consumesEvent` is
+  set for Esc during a live session, and honouring that globally would swallow Esc
+  system-wide rather than only inside Buddy's windows.
+
+Mouse input reaches the machine as `.mouseButtons(pressed: Int)`, a bitmask in the
+shape of `NSEvent.pressedMouseButtons` — the mouse analogue of `.flags`. Presses,
+releases, and the resync after `.tapDisabledByTimeout` are all just a diff against
+the previous mask, so a mouse-up eaten while the tap was dead cannot strand a hold.
 
 ---
 

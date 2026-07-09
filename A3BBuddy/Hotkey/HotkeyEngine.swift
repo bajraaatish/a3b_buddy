@@ -166,7 +166,7 @@ final class HotkeyEngine {
         switch raw {
         case .flags(let modifiers): outcome = machine.flagsChanged(modifiers)
         case .keyDown(let keyCode): outcome = machine.keyDown(keyCode)
-        case .mouseDown: outcome = machine.mouseDown()
+        case .mouseButtons(let pressed): outcome = machine.mouseButtonsChanged(pressed)
         }
 
         emit(outcome)
@@ -205,16 +205,26 @@ final class HotkeyEngine {
         refreshEventTap()
     }
 
-    /// The tap exists exactly when some binding is a bare-modifier hold. `enable()`
-    /// is idempotent, so a rebind that keeps at least one hold never touches it.
+    /// The tap exists exactly when some binding is a bare-modifier hold or a mouse
+    /// button. `enable()` is idempotent, so a rebind that keeps at least one of
+    /// those never touches it.
     private func refreshEventTap() {
         guard isRunning else { return }
-        if machine.table.needsEventTap {
-            isEventTapActive = tapSource.enable()
-        } else {
+        guard machine.table.needsEventTap else {
             tapSource.disable()
             isEventTapActive = false
+            return
         }
+
+        // A bound mouse button should not also trigger Back in the app underneath,
+        // which needs a consuming `.defaultTap` — and that needs Accessibility.
+        // A tap's options are fixed at creation, so a change means a new tap.
+        let wantsConsumption = machine.table.hasMouseButtons && Permissions.accessibilityGranted
+        if tapSource.wantsMouseButtonConsumption != wantsConsumption {
+            tapSource.wantsMouseButtonConsumption = wantsConsumption
+            tapSource.disable()
+        }
+        isEventTapActive = tapSource.enable()
     }
 
     // MARK: Carbon combos

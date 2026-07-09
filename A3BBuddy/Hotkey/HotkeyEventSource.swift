@@ -22,7 +22,11 @@ import CoreGraphics
 enum HotkeyRawEvent: Equatable {
     case flags(NSEvent.ModifierFlags)
     case keyDown(UInt16)
-    case mouseDown
+    /// A bitmask of the mouse buttons physically down, bit N = button N — the
+    /// shape of `NSEvent.pressedMouseButtons`. A mask rather than down/up events
+    /// for the same reason modifiers are a set: presses, releases, and the resync
+    /// after macOS kills the tap all fall out of comparing it with the last one.
+    case mouseButtons(pressed: Int)
 }
 
 enum HotkeyEventDisposition {
@@ -33,12 +37,25 @@ enum HotkeyEventDisposition {
 @MainActor
 protocol HotkeyEventSource: AnyObject {
     var onEvent: ((HotkeyRawEvent) -> HotkeyEventDisposition)? { get set }
+    /// Set before `enable()`. A source that can swallow a bound mouse button
+    /// stops Mouse 4 from also triggering Back in the app underneath.
+    var wantsMouseButtonConsumption: Bool { get set }
     /// `false` ⇒ TCC denied, or `tapCreate` returned nil. Idempotent.
     @discardableResult func enable() -> Bool
     func disable()
     /// The modifiers physically down right now. Used to resync after macOS
     /// disables the tap mid-hold, which silently eats the matching key-up.
     func currentFlags() -> NSEvent.ModifierFlags
+}
+
+/// `true` for a button press, `false` for a release, `nil` for anything that
+/// isn't a mouse button transition.
+private func mouseButtonIsDown(_ type: CGEventType) -> Bool? {
+    switch type {
+    case .leftMouseDown, .rightMouseDown, .otherMouseDown: true
+    case .leftMouseUp, .rightMouseUp, .otherMouseUp: false
+    default: nil
+    }
 }
 
 /// Both sources map `CGEventFlags` / `NSEvent.ModifierFlags` through this, so
@@ -60,8 +77,18 @@ private func recognized(_ flags: CGEventFlags) -> NSEvent.ModifierFlags {
 final class CGEventTapSource: HotkeyEventSource {
     var onEvent: ((HotkeyRawEvent) -> HotkeyEventDisposition)?
 
+    /// Read at `enable()` time. Changing it on a live tap does nothing — the
+    /// engine calls `disable()` first, because a tap's options are fixed at
+    /// `tapCreate`.
+    var wantsMouseButtonConsumption = false
+
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    /// Tracked from the events themselves rather than read from
+    /// `NSEvent.pressedMouseButtons` per event: this tap sits at
+    /// `.headInsertEventTap`, ahead of the window server, so the global state may
+    /// not have caught up with the mouse-up we are being handed right now.
+    private var pressedMouseButtons = 0
 
     var isActive: Bool { eventTap != nil }
 
@@ -75,31 +102,52 @@ final class CGEventTapSource: HotkeyEventSource {
             Permissions.requestInputMonitoring()
         }
 
+        pressedMouseButtons = NSEvent.pressedMouseButtons
+
+        // A tap that can swallow a bound mouse button needs `.defaultTap`, which
+        // TCC only grants on Accessibility — while `.listenOnly` is satisfied by
+        // Accessibility *or* Input Monitoring. Never trade working hotkeys for the
+        // ability to swallow: if the upgrade fails, fall back and carry on.
+        if wantsMouseButtonConsumption, createTap(options: .defaultTap) {
+            return true
+        }
+        if wantsMouseButtonConsumption {
+            NSLog("Buddy: could not create a consuming event tap — grant Accessibility to stop a bound mouse button reaching other apps.")
+        }
+        return createTap(options: .listenOnly)
+    }
+
+    private func createTap(options: CGEventTapOptions) -> Bool {
         let mask: CGEventMask =
             (1 << CGEventType.flagsChanged.rawValue) |
             (1 << CGEventType.keyDown.rawValue) |
             (1 << CGEventType.leftMouseDown.rawValue) |
             (1 << CGEventType.rightMouseDown.rawValue) |
-            (1 << CGEventType.otherMouseDown.rawValue)
+            (1 << CGEventType.otherMouseDown.rawValue) |
+            (1 << CGEventType.leftMouseUp.rawValue) |
+            (1 << CGEventType.rightMouseUp.rawValue) |
+            (1 << CGEventType.otherMouseUp.rawValue)
 
         let callback: CGEventTapCallBack = { _, type, event, refcon in
             // The run-loop source is on CFRunLoopGetMain(), so this is the main thread.
             guard let refcon else { return Unmanaged.passUnretained(event) }
             let source = Unmanaged<CGEventTapSource>.fromOpaque(refcon).takeUnretainedValue()
-            MainActor.assumeIsolated { source.handle(type: type, event: event) }
-            // Listen-only: the disposition is not ours to honour.
-            return Unmanaged.passUnretained(event)
+            let disposition = MainActor.assumeIsolated { source.handle(type: type, event: event) }
+            // Ignored outright by a listen-only tap, so this is safe either way.
+            return disposition == .consume ? nil : Unmanaged.passUnretained(event)
         }
 
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,
+            options: options,
             eventsOfInterest: mask,
             callback: callback,
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
-            NSLog("Buddy: hotkey event tap unavailable — grant Input Monitoring, then relaunch.")
+            if options == .listenOnly {
+                NSLog("Buddy: hotkey event tap unavailable — grant Input Monitoring, then relaunch.")
+            }
             return false
         }
 
@@ -133,28 +181,40 @@ final class CGEventTapSource: HotkeyEventSource {
         recognized(CGEventSource.flagsState(.combinedSessionState))
     }
 
-    private func handle(type: CGEventType, event: CGEvent) {
+    private func handle(type: CGEventType, event: CGEvent) -> HotkeyEventDisposition {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             // macOS kills a tap that stalls the event stream, and again on the
             // user's "disable input events" panic key. Both are recoverable — but
             // events dropped while it was off may include the key-up that would
-            // have ended a hold, so resync the modifier state on the way back.
-            guard let eventTap else { return }
+            // have ended a hold, so resync both input states on the way back.
+            guard let eventTap else { return .pass }
             CGEvent.tapEnable(tap: eventTap, enable: true)
             _ = onEvent?(.flags(currentFlags()))
+            pressedMouseButtons = NSEvent.pressedMouseButtons
+            _ = onEvent?(.mouseButtons(pressed: pressedMouseButtons))
+            return .pass
 
         case .flagsChanged:
             _ = onEvent?(.flags(recognized(event.flags)))
+            return .pass
 
         case .keyDown:
             _ = onEvent?(.keyDown(UInt16(truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode))))
-
-        case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-            _ = onEvent?(.mouseDown)
+            // Never honoured for keys. `Outcome.consumesEvent` is set for Escape
+            // during a live session, and only `LocalMonitorSource` may act on that
+            // — swallowing Escape here would swallow it system-wide.
+            return .pass
 
         default:
-            break
+            guard let isDown = mouseButtonIsDown(type) else { return .pass }
+            let button = Int(event.getIntegerValueField(.mouseEventButtonNumber))
+            if isDown {
+                pressedMouseButtons |= (1 << button)
+            } else {
+                pressedMouseButtons &= ~(1 << button)
+            }
+            return onEvent?(.mouseButtons(pressed: pressedMouseButtons)) ?? .pass
         }
     }
 }
@@ -168,6 +228,10 @@ final class CGEventTapSource: HotkeyEventSource {
 @MainActor
 final class LocalMonitorSource: HotkeyEventSource {
     var onEvent: ((HotkeyRawEvent) -> HotkeyEventDisposition)?
+
+    /// A local monitor consumes by returning nil, with no permission at all, so
+    /// this source ignores the flag and always honours the disposition.
+    var wantsMouseButtonConsumption = false
 
     private var monitors: [Any] = []
 
@@ -191,10 +255,16 @@ final class LocalMonitorSource: HotkeyEventSource {
             monitors.append(keys)
         }
 
-        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let clicks: NSEvent.EventTypeMask = [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+            .leftMouseUp, .rightMouseUp, .otherMouseUp,
+        ]
         if let mouse = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
-            MainActor.assumeIsolated { _ = self?.onEvent?(.mouseDown) }
-            return event
+            // Inside Buddy's own windows the event has already reached the window
+            // server, so the global mask is authoritative and needs no tracking.
+            let pressed = NSEvent.pressedMouseButtons
+            let disposition = MainActor.assumeIsolated { self?.onEvent?(.mouseButtons(pressed: pressed)) ?? .pass }
+            return disposition == .consume ? nil : event
         }) {
             monitors.append(mouse)
         }

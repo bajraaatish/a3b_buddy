@@ -110,6 +110,12 @@ enum HotkeyConflictChecker {
                 return .warn("\(candidate.displayString) is a macOS system shortcut. macOS will act on it too.")
             }
             return .none
+
+        case .mouseButton(let number):
+            guard HotkeyBinding.bindableMouseButtons.contains(number) else {
+                return .block("Only the side buttons — Mouse 4 and Mouse 5 — can be used.")
+            }
+            return .none
         }
     }
 
@@ -170,6 +176,18 @@ enum HotkeyConflictChecker {
                 "Holding \(candidate.displayString) to reach \(existing.displayString) (\(owner)) "
                 + "would start \(feature.displayName) first."
             )
+
+        case (.mouseButton(let candidateButton), .mouseButton(let existingButton)):
+            guard candidateButton == existingButton else { return .none }
+            return .block("\(candidate.displayString) is already used by \(owner).")
+
+        // A button and a key are orthogonal input channels: neither can be a prefix
+        // of the other, so none of the subset reasoning above applies. Pressing a
+        // bound button while a keyboard hold is live ends that hold and starts this
+        // one — see `HotkeyStateMachine.mouseButtonsChanged`.
+        case (.mouseButton, .modifiersOnly), (.mouseButton, .keyCombo),
+             (.modifiersOnly, .mouseButton), (.keyCombo, .mouseButton):
+            return .none
         }
     }
 

@@ -231,4 +231,91 @@ struct HotkeyBindingTests {
         #expect(HotkeyBinding.modifiersOnly(.control).requiresInputMonitoring)
         #expect(!HotkeyBinding.keyCombo(keyCode: space, modifiers: .option).requiresInputMonitoring)
     }
+
+    // MARK: Mouse buttons
+
+    @Test func mouseButtonRoundTripsThroughJSON() throws {
+        let bindings: [HotkeyBinding] = [.mouseButton(number: 3), .modifiersOnly(.control)]
+        let data = try JSONEncoder().encode(bindings)
+        #expect(try JSONDecoder().decode([HotkeyBinding].self, from: data) == bindings)
+    }
+
+    /// The new case encodes under its own key, so a blob written before it existed
+    /// still decodes. Adding a mouse binding must never need a schema migration.
+    @Test func preMouseBlobStillDecodes() throws {
+        let legacy = #"[{"modifiersOnly":{"modifiers":262144}},{"keyCombo":{"modifiers":524288,"keyCode":49}}]"#
+        let decoded = try JSONDecoder().decode([HotkeyBinding].self, from: Data(legacy.utf8))
+        #expect(decoded == [.modifiersOnly(.control), .keyCombo(keyCode: space, modifiers: .option)])
+    }
+
+    /// Button 3 is what every mouse calls "Mouse 4".
+    @Test func mouseButtonDisplayStringIsOneBased() {
+        #expect(HotkeyBinding.mouseButton(number: 3).displayString == "Mouse 4")
+        #expect(HotkeyBinding.mouseButton(number: 4).displayString == "Mouse 5")
+    }
+
+    @Test func aMouseButtonNeedsTheEventTapButIsNotACombo() {
+        let mouse4 = HotkeyBinding.mouseButton(number: 3)
+        #expect(mouse4.requiresInputMonitoring)
+        #expect(!mouse4.isKeyCombo)
+        #expect(!mouse4.isModifiersOnly)
+        #expect(mouse4.mouseButtonNumber == 3)
+        #expect(mouse4.modifierFlags.isEmpty)
+    }
+}
+
+// MARK: - Mouse-button conflict rules
+
+struct HotkeyMouseConflictTests {
+    private func evaluate(
+        _ candidate: HotkeyBinding,
+        for feature: HotkeyFeature = .dictation,
+        slot: Int = 0,
+        against bindings: [HotkeyFeature: [HotkeyBinding]] = [:]
+    ) -> HotkeyConflict {
+        HotkeyConflictChecker.evaluate(candidate, for: feature, slot: slot, against: bindings)
+    }
+
+    @Test(arguments: [3, 4])
+    func sideButtonsAreAllowed(_ number: Int) {
+        #expect(evaluate(.mouseButton(number: number)) == .none)
+    }
+
+    /// Binding left-click would make the Mac unusable; middle-click is paste in a
+    /// terminal and close-tab in a browser.
+    @Test(arguments: [0, 1, 2, 5])
+    func everyOtherButtonIsBlocked(_ number: Int) {
+        #expect(evaluate(.mouseButton(number: number)).isBlocking)
+    }
+
+    @Test func theSameButtonTwiceIsBlocked() {
+        let verdict = evaluate(
+            .mouseButton(number: 3),
+            for: .dictation,
+            against: [.pushToTalk: [.mouseButton(number: 3)]]
+        )
+        #expect(verdict.isBlocking)
+    }
+
+    @Test func differentButtonsCoexist() {
+        let verdict = evaluate(
+            .mouseButton(number: 3),
+            for: .dictation,
+            against: [.pushToTalk: [.mouseButton(number: 4)]]
+        )
+        #expect(verdict == .none)
+    }
+
+    /// A button and a key are orthogonal channels. An empty modifier set must not
+    /// fall into the subset rules, where it is a strict subset of everything.
+    @Test func aMouseButtonNeverConflictsWithAKeyboardBinding() {
+        let against: [HotkeyFeature: [HotkeyBinding]] = [
+            .pushToTalk: [.modifiersOnly([.control, .option]), .keyCombo(keyCode: space, modifiers: .option)]
+        ]
+        #expect(evaluate(.mouseButton(number: 3), for: .dictation, against: against) == .none)
+        #expect(evaluate(.modifiersOnly([.control, .shift]), for: .dictation,
+                         against: [.pushToTalk: [.mouseButton(number: 3)]]) == .none)
+        #expect(evaluate(.keyCombo(keyCode: keyD, modifiers: [.command, .shift]), for: .dictation,
+                         against: [.pushToTalk: [.mouseButton(number: 3)]]) == .none)
+    }
 }

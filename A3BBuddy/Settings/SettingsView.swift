@@ -18,7 +18,17 @@ struct SettingsView: View {
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var mics: [(id: String, name: String)] = []
     @State private var inputMonitoringGranted = Permissions.inputMonitoringGranted
+    @State private var accessibilityGranted = Permissions.accessibilityGranted
     @State private var hotkeyFeedback: HotkeyRecorderFeedback?
+
+    /// Swallowing a bound mouse button needs a consuming event tap, and macOS only
+    /// grants that on Accessibility. Without it the button still works — it just
+    /// also reaches the app underneath, where Mouse 4 is usually Back.
+    private var mouseButtonBinding: HotkeyBinding? {
+        HotkeyFeature.allCases
+            .flatMap { hotkeyStore.bindings(for: $0) }
+            .first { $0.mouseButtonNumber != nil }
+    }
 
     var body: some View {
         Form {
@@ -54,6 +64,20 @@ struct SettingsView: View {
                         .pointerCursor()
                     }
                     Text("macOS needs Input Monitoring for modifier-only hotkeys in other apps. Grant it, then quit and reopen Buddy.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                if let mouseButtonBinding, !accessibilityGranted {
+                    LabeledContent("Accessibility") {
+                        Button("Grant in System Settings...") {
+                            Permissions.promptAccessibility()
+                            Permissions.openAccessibilitySettings()
+                            accessibilityGranted = Permissions.accessibilityGranted
+                        }
+                        .pointerCursor()
+                    }
+                    Text("\(mouseButtonBinding.displayString) still works without this, but it will also do whatever it normally does — Back in a browser, for example. Grant Accessibility, then quit and reopen Buddy, and Buddy will keep the button to itself.")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }

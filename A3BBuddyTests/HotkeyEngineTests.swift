@@ -23,6 +23,7 @@ import Testing
 @MainActor
 private final class FakeEventSource: HotkeyEventSource {
     var onEvent: ((HotkeyRawEvent) -> HotkeyEventDisposition)?
+    var wantsMouseButtonConsumption = false
 
     private(set) var enableCount = 0
     private(set) var disableCount = 0
@@ -52,6 +53,7 @@ private final class FakeEventSource: HotkeyEventSource {
 @MainActor
 private final class DeniedEventSource: HotkeyEventSource {
     var onEvent: ((HotkeyRawEvent) -> HotkeyEventDisposition)?
+    var wantsMouseButtonConsumption = false
     func enable() -> Bool { false }
     func disable() {}
     func currentFlags() -> NSEvent.ModifierFlags { [] }
@@ -301,7 +303,7 @@ private final class EventRecorder {
 
         h.tap.send(.flags([.control, .option]))
         _ = h.recorder.drain()
-        h.tap.send(.mouseDown)
+        h.tap.send(.mouseButtons(pressed: 1 << 0))    // plain left click
         #expect(h.recorder.drain().isEmpty)
         #expect(h.engine.isHeld(.pushToTalk))
     }

@@ -138,6 +138,18 @@ final class HotkeyRecorderNSView: NSView {
         beginRecording()
     }
 
+    /// The side buttons. Left- and right-click keep their normal jobs — clicking
+    /// the field is how you start recording in the first place — so they arrive
+    /// here only as `otherMouseDown`, never as a candidate binding.
+    /// `commit` runs the conflict checker, so an unbindable button beeps.
+    override func otherMouseDown(with event: NSEvent) {
+        guard isRecording else {
+            super.otherMouseDown(with: event)
+            return
+        }
+        commit(.mouseButton(number: event.buttonNumber))
+    }
+
     override func resignFirstResponder() -> Bool {
         if isRecording {
             cancelRecording()

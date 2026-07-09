@@ -31,6 +31,7 @@ import Carbon.HIToolbox
 enum HotkeyTriggerSource: Equatable, Sendable {
     case modifierHold
     case keyCombo
+    case mouseButton
 }
 
 enum HotkeyCancelReason: Equatable, Sendable {
@@ -80,18 +81,24 @@ struct HotkeyMatchTable: Equatable {
 
     private let holdsByFeature: [HotkeyFeature: [HotkeyBinding]]
     private let combosByFeature: [HotkeyFeature: [HotkeyBinding]]
+    private let mouseButtonsByFeature: [HotkeyFeature: [Int]]
     private let ambiguousHolds: Set<HotkeyBinding>
 
     init(bindings: [HotkeyFeature: [HotkeyBinding]]) {
         var holds: [HotkeyFeature: [HotkeyBinding]] = [:]
         var combos: [HotkeyFeature: [HotkeyBinding]] = [:]
+        var mouseButtons: [HotkeyFeature: [Int]] = [:]
         for feature in HotkeyFeature.allCases {
             let all = bindings[feature] ?? []
             holds[feature] = all.filter(\.isModifiersOnly)
-            combos[feature] = all.filter { !$0.isModifiersOnly }
+            // `isKeyCombo`, not `!isModifiersOnly`: a mouse binding filed here would
+            // shift every Carbon slot index out from under `combo(at:)`.
+            combos[feature] = all.filter(\.isKeyCombo)
+            mouseButtons[feature] = all.compactMap(\.mouseButtonNumber)
         }
         holdsByFeature = holds
         combosByFeature = combos
+        mouseButtonsByFeature = mouseButtons
 
         let everyHold = holds.values.flatMap { $0 }
         ambiguousHolds = Set(everyHold.filter { candidate in
@@ -99,9 +106,14 @@ struct HotkeyMatchTable: Equatable {
         })
     }
 
-    /// Only bare-modifier holds are tap-matched, and only the tap needs a grant.
+    /// Holds and mouse buttons are tap-matched, and only the tap needs a grant.
     var needsEventTap: Bool {
-        holdsByFeature.values.contains { !$0.isEmpty }
+        holdsByFeature.values.contains { !$0.isEmpty } || hasMouseButtons
+    }
+
+    /// Drives the `.defaultTap` upgrade — only a mouse binding wants to swallow.
+    var hasMouseButtons: Bool {
+        mouseButtonsByFeature.values.contains { !$0.isEmpty }
     }
 
     func holds(for feature: HotkeyFeature) -> [HotkeyBinding] {
@@ -111,6 +123,18 @@ struct HotkeyMatchTable: Equatable {
     func combo(at slot: Int, for feature: HotkeyFeature) -> HotkeyBinding? {
         let combos = combosByFeature[feature] ?? []
         return slot < combos.count ? combos[slot] : nil
+    }
+
+    /// Bound to *any* feature. An unbound press keeps its old meaning: it cancels
+    /// dictation. A bound one is a trigger and must never cancel its own feature.
+    func isBoundMouseButton(_ number: Int) -> Bool {
+        mouseButtonsByFeature.values.contains { $0.contains(number) }
+    }
+
+    func feature(forMouseButton number: Int) -> HotkeyFeature? {
+        // `HotkeyConflictChecker` blocks binding one button to two features, so at
+        // most one owner exists; `first` rather than a crash if that ever slips.
+        HotkeyFeature.allCases.first { mouseButtonsByFeature[$0]?.contains(number) == true }
     }
 
     /// A hold that is a strict prefix of *any* other hold cannot fire on contact:
@@ -160,13 +184,25 @@ struct HotkeyStateMachine {
         var events: [HotkeyEvent] = []
         var cancelGrace: [HotkeyFeature] = []
         var scheduleGrace: [GraceRequest] = []
-        /// Only `LocalMonitorSource` honours this — a listen-only tap can't consume.
+        /// Honoured by `LocalMonitorSource` always, and by `CGEventTapSource` only
+        /// for mouse buttons and only when it managed to create a `.defaultTap`.
         var consumesEvent = false
+
+        /// Merges `other` after self, keeping dispatch order. `consumesEvent` is
+        /// sticky: one consuming part makes the whole outcome consume.
+        mutating func append(_ other: Outcome) {
+            events += other.events
+            cancelGrace += other.cancelGrace
+            scheduleGrace += other.scheduleGrace
+            consumesEvent = consumesEvent || other.consumesEvent
+        }
     }
 
     private(set) var table: HotkeyMatchTable
     private(set) var states: [HotkeyFeature: FeatureState]
     private var escapeCancelsActiveSession: [HotkeyFeature: Bool] = [:]
+    /// Last seen `NSEvent.pressedMouseButtons`. Presses and releases are its diff.
+    private var pressedMouseButtons = 0
 
     private static let escapeKeyCode = UInt16(kVK_Escape)
 
@@ -316,7 +352,7 @@ struct HotkeyStateMachine {
                 state.phase = .idle
                 state.suppressed = true
 
-            case .held(_, .modifierHold):
+            case .held(_, .modifierHold), .held(_, .mouseButton):
                 // Esc is reported on its own channel — a locked hands-free session
                 // must see it, and `.cancelled` is exactly what a lock ignores.
                 guard !isEscape else { break }
@@ -334,7 +370,63 @@ struct HotkeyStateMachine {
         return outcome
     }
 
-    mutating func mouseDown() -> Outcome {
+    /// `pressed` is a bitmask of the buttons physically down. Everything is derived
+    /// from its difference with the previous mask, which is what makes a resync
+    /// after macOS kills the tap indistinguishable from a normal release.
+    ///
+    /// Terminations run before initiations, for the same reason `flagsChanged` does
+    /// it: a feature that is ending must reach its adapter before the one that is
+    /// starting, or two `AVAudioEngine`s contend for the input node.
+    mutating func mouseButtonsChanged(_ pressed: Int) -> Outcome {
+        let newlyPressed = pressed & ~pressedMouseButtons
+        let newlyReleased = pressedMouseButtons & ~pressed
+        pressedMouseButtons = pressed
+
+        var outcome = Outcome()
+
+        // ── Releases: a mouse hold ends when its own button comes up ────
+        for feature in HotkeyFeature.allCases {
+            guard case .held(let binding, .mouseButton) = states[feature]!.phase,
+                  let button = binding.mouseButtonNumber,
+                  newlyReleased & (1 << button) != 0
+            else { continue }
+
+            states[feature]!.phase = .idle
+            states[feature]!.suppressed = false
+            outcome.events.append(.released(feature))
+        }
+
+        // Swallow both halves of a bound button, or the app underneath sees a
+        // mouse-up with no matching mouse-down.
+        outcome.consumesEvent = bitsSet(newlyPressed | newlyReleased).contains { table.isBoundMouseButton($0) }
+
+        for button in bitsSet(newlyPressed) {
+            guard let owner = table.feature(forMouseButton: button) else {
+                // ── Unbound click: the old behaviour, unchanged ────
+                outcome.append(cancelForUnboundClick())
+                continue
+            }
+
+            // ── Bound click: one session at a time ────
+            guard case .idle = states[owner]!.phase else { continue }
+            // Push-to-talk does not cancel on mouse-down, so without this a bound
+            // button could start it *on top of* a live dictation hold.
+            for other in HotkeyFeature.allCases where other != owner {
+                outcome.append(terminate(other, reason: .mouseDown))
+            }
+
+            states[owner]!.phase = .held(.mouseButton(number: button), .mouseButton)
+            states[owner]!.suppressed = false
+            outcome.events.append(.armed(owner))
+            outcome.events.append(.pressed(owner, .mouseButton))
+        }
+
+        return outcome
+    }
+
+    /// Any click that isn't a hotkey kills an unlocked dictation, so ⌃-click
+    /// (which macOS treats as a right-click) reaches the app underneath untouched.
+    private mutating func cancelForUnboundClick() -> Outcome {
         var outcome = Outcome()
 
         for feature in HotkeyFeature.allCases where feature.cancelsOnMouseDown {
@@ -348,7 +440,7 @@ struct HotkeyStateMachine {
                 state.phase = .idle
                 state.suppressed = true
 
-            case .held(_, .modifierHold):
+            case .held(_, .modifierHold), .held(_, .mouseButton):
                 outcome.events.append(.cancelled(feature, .mouseDown))
                 state.phase = .idle
                 state.suppressed = true
@@ -359,6 +451,32 @@ struct HotkeyStateMachine {
         }
 
         return outcome
+    }
+
+    /// Ends whatever `feature` is doing, whatever that is. `.idle` stays silent.
+    private mutating func terminate(_ feature: HotkeyFeature, reason: HotkeyCancelReason) -> Outcome {
+        var outcome = Outcome()
+        var state = states[feature]!
+        defer { states[feature] = state }
+
+        switch state.phase {
+        case .pending:
+            outcome.cancelGrace.append(feature)
+            outcome.events.append(.disarmed(feature))
+        case .held:
+            outcome.events.append(.cancelled(feature, reason))
+        case .idle:
+            return outcome
+        }
+        state.phase = .idle
+        state.suppressed = true
+        return outcome
+    }
+
+    /// The indices of the set bits, low to high. Mice report far fewer than 32
+    /// buttons; the cap just keeps this from walking the whole word.
+    private func bitsSet(_ mask: Int) -> [Int] {
+        (0 ..< 32).filter { mask & (1 << $0) != 0 }
     }
 
     // MARK: Carbon combos

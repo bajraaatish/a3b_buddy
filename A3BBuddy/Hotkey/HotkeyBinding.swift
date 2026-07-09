@@ -13,7 +13,10 @@
 //    .modifiersOnly ⌃, ⌃⌥, fn — a bare modifier hold. Carbon can't register
 //                   these at all, so they're matched in the event tap.
 //
-//  NSEvent.ModifierFlags isn't Codable, so both cases store `rawValue`.
+//    .mouseButton   Mouse 4, Mouse 5 — a side-button hold, also matched in the
+//                   event tap. Carries no modifiers: ⌃+Mouse 4 is just Mouse 4.
+//
+//  NSEvent.ModifierFlags isn't Codable, so the keyboard cases store `rawValue`.
 //  Everything here is a pure value type: no MainActor, no UserDefaults,
 //  no KeyboardShortcuts. That keeps the conflict rules unit-testable.
 //
@@ -24,11 +27,19 @@ import Carbon.HIToolbox
 enum HotkeyBinding: Codable, Equatable, Hashable {
     case keyCombo(keyCode: UInt16, modifiers: UInt)
     case modifiersOnly(modifiers: UInt)
+    /// A macOS mouse button number, as reported by `NSEvent.buttonNumber`:
+    /// 0 left, 1 right, 2 middle, 3 and 4 the side buttons. Only 3 and 4 are
+    /// bindable — see `bindableMouseButtons`.
+    case mouseButton(number: Int)
 
     /// The only five modifiers we ever look at. Everything else in a
     /// `CGEventFlags` / `NSEvent.ModifierFlags` (caps lock, numeric pad,
     /// left-vs-right device bits, `.maskNonCoalesced`) is noise.
     static let recognizedModifiers: NSEvent.ModifierFlags = [.control, .option, .shift, .command, .function]
+
+    /// Left and right are how you use a Mac; middle is paste in a terminal and
+    /// close-tab in a browser. Only the two side buttons may be bound.
+    static let bindableMouseButtons: ClosedRange<Int> = 3...4
 
     // MARK: Convenience constructors
 
@@ -42,10 +53,15 @@ enum HotkeyBinding: Codable, Equatable, Hashable {
 
     // MARK: Accessors
 
+    /// `.mouseButton` deliberately reports an empty set rather than being absent:
+    /// callers that reason about modifier *subsets* must never see it, which is
+    /// why `HotkeyConflictChecker` switches on the case instead of on this.
     var modifierFlags: NSEvent.ModifierFlags {
         switch self {
         case .keyCombo(_, let modifiers), .modifiersOnly(let modifiers):
             NSEvent.ModifierFlags(rawValue: modifiers).intersection(Self.recognizedModifiers)
+        case .mouseButton:
+            []
         }
     }
 
@@ -59,11 +75,24 @@ enum HotkeyBinding: Codable, Equatable, Hashable {
         return false
     }
 
-    /// Only bare-modifier holds need the event tap, and only the event tap
-    /// needs Input Monitoring. A combo-only setup works with zero permissions.
-    var requiresInputMonitoring: Bool { isModifiersOnly }
+    /// Not `!isModifiersOnly`. A mouse binding is neither a hold nor a combo, and
+    /// the places that partition bindings — the match table's Carbon slots and
+    /// `HotkeyBindingStore.syncCarbonRegistrations` — must not misfile it as one.
+    var isKeyCombo: Bool {
+        if case .keyCombo = self { return true }
+        return false
+    }
 
-    /// "⌃⌥", "⌥Space", "fn". Hand-rolled rather than reusing
+    var mouseButtonNumber: Int? {
+        if case .mouseButton(let number) = self { return number }
+        return nil
+    }
+
+    /// Holds and mouse buttons are matched in the event tap, and only the tap
+    /// needs Input Monitoring. A combo-only setup works with zero permissions.
+    var requiresInputMonitoring: Bool { isModifiersOnly || mouseButtonNumber != nil }
+
+    /// "⌃⌥", "⌥Space", "fn", "Mouse 4". Hand-rolled rather than reusing
     /// `KeyboardShortcuts.Shortcut.description`, which is `@MainActor`.
     var displayString: String {
         switch self {
@@ -71,6 +100,9 @@ enum HotkeyBinding: Codable, Equatable, Hashable {
             modifierFlags.hotkeyGlyphs
         case .keyCombo(let keyCode, _):
             modifierFlags.hotkeyGlyphs + HotkeyBinding.keyLabel(for: keyCode)
+        case .mouseButton(let number):
+            // Button 3 is what everyone calls "Mouse 4".
+            "Mouse \(number + 1)"
         }
     }
 }
