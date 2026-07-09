@@ -372,8 +372,14 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
         inputNode.removeTap(onBus: 0)
+        // The tap block runs on the realtime audio thread. Bind the session here
+        // rather than reading the @MainActor property from inside it — main nils
+        // that property in `resetSessionState()`, which races the reference count
+        // against an in-flight buffer. The capture's lifetime is exactly the tap's:
+        // `removeTap` always precedes the reset.
+        let sessionForAudioTap = activeTranscriptionSession
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, _ in
-            self?.activeTranscriptionSession?.appendAudioBuffer(buffer)
+            sessionForAudioTap.appendAudioBuffer(buffer)
             self?.updateAudioPowerLevel(from: buffer)
         }
 
@@ -505,7 +511,9 @@ final class BuddyDictationManager: NSObject, ObservableObject {
         return orderedKeyterms
     }
 
-    private func updateAudioPowerLevel(from audioBuffer: AVAudioPCMBuffer) {
+    /// `nonisolated`: called straight from the audio tap. Everything before the
+    /// `DispatchQueue.main.async` hop touches only the buffer.
+    nonisolated private func updateAudioPowerLevel(from audioBuffer: AVAudioPCMBuffer) {
         guard let channelData = audioBuffer.floatChannelData else { return }
 
         let channelSamples = channelData[0]

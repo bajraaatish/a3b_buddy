@@ -53,8 +53,13 @@ final class RealDictationEngine: ObservableObject, DictationEngine {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                // This fires on *every* defaults write, not just the model key,
+                // so bail unless the wanted variant is neither loaded nor already
+                // downloading. Otherwise toggling any pref mid-download spawns a
+                // task per keystroke.
                 let wanted = Self.selectedVariant().whisperKitName
-                guard wanted != self.transcriber.loadedVariant else { return }
+                guard wanted != self.transcriber.loadedVariant,
+                      wanted != self.transcriber.requestedVariant else { return }
                 Task { try? await self.transcriber.prepare(variant: wanted) }
             }
         }

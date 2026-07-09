@@ -227,6 +227,10 @@ class SubscriptionClaudeProvider {
         return try await withTaskCancellationHandler(operation: {
             try claudeCLIProcess.run()
 
+            // Drain stderr concurrently — see SubprocessErrorOutputAccumulator.
+            let standardErrorOutput = SubprocessErrorOutputAccumulator(draining: standardErrorPipe)
+            defer { standardErrorOutput.stopDraining() }
+
             // Feed the request and close stdin so the CLI knows input is done.
             try standardInputPipe.fileHandleForWriting.write(contentsOf: streamJSONInputData)
             try standardInputPipe.fileHandleForWriting.close()
@@ -286,12 +290,9 @@ class SubscriptionClaudeProvider {
             // Prefer the result event's authoritative full text; fall back to
             // the accumulated deltas if the result event was missing text.
             guard let responseText = finalResultText ?? (accumulatedResponseText.isEmpty ? nil : accumulatedResponseText) else {
-                let standardErrorData = standardErrorPipe.fileHandleForReading.readDataToEndOfFile()
-                let standardErrorText = String(data: standardErrorData, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 throw SubscriptionClaudeProviderError.claudeCLIProducedNoResult(
                     exitCode: claudeCLIProcess.terminationStatus,
-                    standardErrorText: standardErrorText
+                    standardErrorText: standardErrorOutput.text()
                 )
             }
 
@@ -301,7 +302,12 @@ class SubscriptionClaudeProvider {
         }, onCancel: {
             // CompanionManager cancels the response task when a new push-to-talk
             // begins — kill the subprocess so it stops consuming the subscription.
-            claudeCLIProcess.terminate()
+            //
+            // `isRunning` first: onCancel fires immediately if the task was already
+            // cancelled when the handler was installed, i.e. before `run()`, and
+            // `terminate()` raises NSInvalidArgumentException on a process that was
+            // never launched.
+            if claudeCLIProcess.isRunning { claudeCLIProcess.terminate() }
         })
     }
 

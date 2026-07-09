@@ -232,6 +232,11 @@ final class SubscriptionCodexProvider: BuddyBrainProvider {
 
         return try await withTaskCancellationHandler(operation: {
             try codexProcess.run()
+
+            // Drain stderr concurrently — see SubprocessErrorOutputAccumulator.
+            let standardErrorOutput = SubprocessErrorOutputAccumulator(draining: standardErrorPipe)
+            defer { standardErrorOutput.stopDraining() }
+
             try standardInputPipe.fileHandleForWriting.write(contentsOf: Data(combinedPrompt.utf8))
             try standardInputPipe.fileHandleForWriting.close()
 
@@ -252,10 +257,7 @@ final class SubscriptionCodexProvider: BuddyBrainProvider {
             codexProcess.waitUntilExit()
 
             guard let responseText = agentMessageText else {
-                let standardErrorText = String(
-                    data: standardErrorPipe.fileHandleForReading.readDataToEndOfFile(),
-                    encoding: .utf8
-                )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let standardErrorText = standardErrorOutput.text()
                 if standardErrorText.lowercased().contains("login") || standardErrorText.lowercased().contains("auth") {
                     throw BuddyBrainProviderError.cliNotLoggedIn(
                         cliName: "Codex CLI",
@@ -274,7 +276,10 @@ final class SubscriptionCodexProvider: BuddyBrainProvider {
             print("🧠 Codex response: \(responseText.count) chars in \(String(format: "%.1f", requestDuration))s")
             return (text: responseText, duration: requestDuration)
         }, onCancel: {
-            codexProcess.terminate()
+            // `terminate()` raises NSInvalidArgumentException on a process that was
+            // never launched, and onCancel fires immediately when the task is
+            // already cancelled — i.e. before `run()`.
+            if codexProcess.isRunning { codexProcess.terminate() }
         })
     }
 }
@@ -355,6 +360,11 @@ final class SubscriptionGeminiProvider: BuddyBrainProvider {
 
         return try await withTaskCancellationHandler(operation: {
             try geminiProcess.run()
+
+            // Drain stderr concurrently — see SubprocessErrorOutputAccumulator.
+            let standardErrorOutput = SubprocessErrorOutputAccumulator(draining: standardErrorPipe)
+            defer { standardErrorOutput.stopDraining() }
+
             let outputData = await Task.detached {
                 standardOutputPipe.fileHandleForReading.readDataToEndOfFile()
             }.value
@@ -364,10 +374,7 @@ final class SubscriptionGeminiProvider: BuddyBrainProvider {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
             guard geminiProcess.terminationStatus == 0, !responseText.isEmpty else {
-                let standardErrorText = String(
-                    data: standardErrorPipe.fileHandleForReading.readDataToEndOfFile(),
-                    encoding: .utf8
-                )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let standardErrorText = standardErrorOutput.text()
                 if standardErrorText.contains("Auth method") || standardErrorText.lowercased().contains("login") {
                     throw BuddyBrainProviderError.cliNotLoggedIn(
                         cliName: "Antigravity CLI",
@@ -386,7 +393,10 @@ final class SubscriptionGeminiProvider: BuddyBrainProvider {
             print("🧠 Gemini response: \(responseText.count) chars in \(String(format: "%.1f", requestDuration))s")
             return (text: responseText, duration: requestDuration)
         }, onCancel: {
-            geminiProcess.terminate()
+            // `terminate()` raises NSInvalidArgumentException on a process that was
+            // never launched, and onCancel fires immediately when the task is
+            // already cancelled — i.e. before `run()`.
+            if geminiProcess.isRunning { geminiProcess.terminate() }
         })
     }
 }

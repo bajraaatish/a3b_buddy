@@ -16,9 +16,37 @@ struct CompanionScreenCapture {
     let isCursorScreen: Bool
     let displayWidthInPoints: Int
     let displayHeightInPoints: Int
+    /// AppKit coordinates (bottom-left origin) — the space `NSEvent.mouseLocation`,
+    /// `NSScreen.frame`, and the overlay window all live in. Capture sources hand
+    /// back Core Graphics rects (`SCDisplay.frame`, `SCWindow.frame`), so they must
+    /// be flipped before they land here.
     let displayFrame: CGRect
     let screenshotWidthInPixels: Int
     let screenshotHeightInPixels: Int
+
+    /// Maps a point in the screenshot's pixel space — top-left origin, which is
+    /// what Claude sees and what a `[POINT:x,y]` tag is expressed in — to the
+    /// global AppKit point the buddy should fly to.
+    func globalAppKitPoint(forScreenshotPixel screenshotPixel: CGPoint) -> CGPoint {
+        let screenshotWidth = CGFloat(screenshotWidthInPixels)
+        let screenshotHeight = CGFloat(screenshotHeightInPixels)
+        guard screenshotWidth > 0, screenshotHeight > 0 else { return displayFrame.origin }
+
+        let clampedX = max(0, min(screenshotPixel.x, screenshotWidth))
+        let clampedY = max(0, min(screenshotPixel.y, screenshotHeight))
+
+        // Screenshot pixels → display points (e.g. 1280x831 → 1512x982).
+        let displayWidth = CGFloat(displayWidthInPoints)
+        let displayHeight = CGFloat(displayHeightInPoints)
+        let displayLocalX = clampedX * (displayWidth / screenshotWidth)
+        let displayLocalY = clampedY * (displayHeight / screenshotHeight)
+
+        // Top-left origin → bottom-left origin, then display-local → global.
+        return CGPoint(
+            x: displayLocalX + displayFrame.origin.x,
+            y: (displayHeight - displayLocalY) + displayFrame.origin.y
+        )
+    }
 }
 
 @MainActor
@@ -60,6 +88,21 @@ enum CompanionScreenCaptureUtility {
         print("CAPTURE_ALLOWED bundle_id=\(frontmostBundleIdentifier ?? "unknown") mode=\(mode.rawValue)")
         CompanionCaptureIndicatorNotifier.postCaptureSucceeded(mode: mode)
         return .captured(capturedScreens)
+    }
+
+    /// `SCWindow.frame` and `SCDisplay.frame` are Core Graphics rects: origin at the
+    /// top-left of the primary display, y growing downward. Flip about the primary
+    /// display's top edge to get the AppKit rect `CompanionScreenCapture.displayFrame`
+    /// promises.
+    private static func appKitFrame(fromCoreGraphicsRect coreGraphicsRect: CGRect) -> CGRect {
+        // `NSScreen.screens[0]` is the origin screen, so its frame's origin is (0, 0).
+        guard let primaryScreen = NSScreen.screens.first else { return coreGraphicsRect }
+        return CGRect(
+            x: coreGraphicsRect.origin.x,
+            y: primaryScreen.frame.maxY - coreGraphicsRect.maxY,
+            width: coreGraphicsRect.width,
+            height: coreGraphicsRect.height
+        )
     }
 
     private static func captureFullScreensAsJPEG() async throws -> [CompanionScreenCapture] {
@@ -109,8 +152,10 @@ enum CompanionScreenCaptureUtility {
             // displayFrame is in the same coordinate system as NSEvent.mouseLocation
             // and the overlay window's screenFrame in A3BBuddyOverlayView.
             let displayFrame = nsScreenByDisplayID[display.displayID]?.frame
-                ?? CGRect(x: display.frame.origin.x, y: display.frame.origin.y,
-                          width: CGFloat(display.width), height: CGFloat(display.height))
+                ?? appKitFrame(fromCoreGraphicsRect: CGRect(
+                    x: display.frame.origin.x, y: display.frame.origin.y,
+                    width: CGFloat(display.width), height: CGFloat(display.height)
+                ))
             let isCursorScreen = displayFrame.contains(mouseLocation)
 
             let filter = SCContentFilter(display: display, excludingWindows: ownAppWindows)
@@ -227,7 +272,7 @@ enum CompanionScreenCaptureUtility {
             isCursorScreen: true,
             displayWidthInPoints: windowWidth,
             displayHeightInPoints: windowHeight,
-            displayFrame: activeWindow.frame,
+            displayFrame: appKitFrame(fromCoreGraphicsRect: activeWindow.frame),
             screenshotWidthInPixels: configuration.width,
             screenshotHeightInPixels: configuration.height
         )]

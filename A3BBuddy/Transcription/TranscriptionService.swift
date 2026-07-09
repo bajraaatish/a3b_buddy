@@ -15,6 +15,12 @@ final class TranscriptionService {
     private(set) var loadedVariant: String?
     private var prepareTask: Task<Void, Error>?
 
+    /// The variant `prepareTask` is currently loading. Set before the task starts,
+    /// because `loadedVariant` stays nil for the whole download — without this, a
+    /// second call for the same variant would cancel and restart the download it
+    /// was supposed to join.
+    private(set) var requestedVariant: String?
+
     var isReady: Bool { whisperKit != nil }
 
     /// Downloads (if needed) and loads the given WhisperKit variant, e.g.
@@ -22,7 +28,13 @@ final class TranscriptionService {
     /// concurrent calls share one in-flight load; switching variants reloads.
     func prepare(variant: String) async throws {
         if loadedVariant == variant, whisperKit != nil { return }
+
         if let running = prepareTask {
+            if requestedVariant == variant {
+                // Already downloading exactly this — join it, don't restart it.
+                try await running.value
+                return
+            }
             running.cancel()
             _ = try? await running.value
         }
@@ -62,9 +74,19 @@ final class TranscriptionService {
             Self.postStatus(nil)
         }
         prepareTask = task
-        defer { if prepareTask == task { prepareTask = nil } }
+        requestedVariant = variant
+        defer {
+            if prepareTask == task {
+                prepareTask = nil
+                requestedVariant = nil
+            }
+        }
         do {
             try await task.value
+        } catch is CancellationError {
+            // A variant switch superseded this load. The replacement owns the
+            // status line now — surfacing "failed" here would be a lie.
+            throw CancellationError()
         } catch {
             Self.postStatus("Model failed to load")
             throw error

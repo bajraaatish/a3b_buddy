@@ -13,6 +13,9 @@ enum PrefKey {
     static let soundCues = "soundCues"
     static let retention = "retention"
     static let hasOnboarded = "hasOnboarded"
+    /// Set once, the first time the app registers itself as a login item. After
+    /// that the login-item state belongs to the user, not to launch code.
+    static let didRegisterLoginItem = "didRegisterLoginItem"
 
     // ── Flexible hotkeys. JSON-encoded `[HotkeyBinding]`. ────
     static let dictationBinding = "hotkey.dictation"

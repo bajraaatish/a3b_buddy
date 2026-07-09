@@ -99,6 +99,11 @@ final class KokoroTTSProvider: NSObject, BuddyTTSProvider {
 
         let wavFileURL = try await synthesizeToWavFile(text)
 
+        // Synthesis takes ~2s. If the user pressed push-to-talk again in the
+        // meantime, this response is superseded — playing it now would talk over
+        // the new one.
+        try Task.checkCancellation()
+
         let player = try AVAudioPlayer(contentsOf: wavFileURL)
         player.delegate = self
         audioPlayer = player
@@ -125,8 +130,13 @@ final class KokoroTTSProvider: NSObject, BuddyTTSProvider {
         nextRequestID += 1
 
         let requestBody = try JSONSerialization.data(withJSONObject: ["id": requestID, "text": text])
-        helperStdinPipe?.fileHandleForWriting.write(requestBody)
-        helperStdinPipe?.fileHandleForWriting.write(Data("\n".utf8))
+        // `write(contentsOf:)`, not `write(_:)`: the helper can die between the
+        // `isRunning` check above and this line, and the legacy overload raises an
+        // ObjC exception on a broken pipe that Swift cannot catch.
+        if let stdinFileHandle = helperStdinPipe?.fileHandleForWriting {
+            try stdinFileHandle.write(contentsOf: requestBody)
+            try stdinFileHandle.write(contentsOf: Data("\n".utf8))
+        }
 
         return try await withResponseTimeout(requestID: requestID)
     }
@@ -225,8 +235,23 @@ final class KokoroTTSProvider: NSObject, BuddyTTSProvider {
         }
         defer { timeoutWatchdogTask.cancel() }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            pendingResponseContinuations[requestID] = continuation
+        // Cancellation-aware: a plain continuation would keep the caller suspended
+        // until the helper answered or the 30s watchdog fired, long after the
+        // response it belongs to was superseded.
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                // Already cancelled before we could register — onCancel has run and
+                // found nothing to fail, so resolve here or we hang.
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                pendingResponseContinuations[requestID] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.resumePendingContinuation(forRequestID: requestID, with: .failure(CancellationError()))
+            }
         }
     }
 
@@ -238,7 +263,14 @@ final class KokoroTTSProvider: NSObject, BuddyTTSProvider {
 
 extension KokoroTTSProvider: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        // Identity, not the player itself: AVAudioPlayer isn't Sendable, and by the
+        // time this hop lands `speak` may already have installed a newer player —
+        // nilling that one would cut its audio off mid-sentence.
+        let finishedPlayerIdentity = ObjectIdentifier(player)
         Task { @MainActor in
+            guard let currentPlayer = self.audioPlayer,
+                  ObjectIdentifier(currentPlayer) == finishedPlayerIdentity else { return }
+
             if let playbackStartDate = self.playbackStartDate {
                 let playbackDurationSeconds = Date().timeIntervalSince(playbackStartDate)
                 print("TTS_END \(String(format: "%.2f", playbackDurationSeconds)) (finished)")

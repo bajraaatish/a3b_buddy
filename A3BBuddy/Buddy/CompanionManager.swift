@@ -99,6 +99,15 @@ final class CompanionManager: ObservableObject {
     /// speaks again before the delay elapses.
     private var transientHideTask: Task<Void, Never>?
 
+    /// Ceiling on how long the transient hide waits for TTS playback and the
+    /// pointing animation before fading out regardless.
+    private static let transientHideMaximumWaitSeconds: TimeInterval = 15
+
+    /// `NSSpeechSynthesizer` does not retain itself while speaking and
+    /// `startSpeaking` returns immediately, so a local would deallocate and
+    /// cut the speech off before a single word came out.
+    private var errorSpeechSynthesizer: NSSpeechSynthesizer?
+
     /// True when all three required permissions (accessibility, screen recording,
     /// microphone) are granted. Used by the panel to show a single "all good" state.
     var allPermissionsGranted: Bool {
@@ -512,6 +521,16 @@ final class CompanionManager: ObservableObject {
         buddyTTSProvider.stopPlayback()
 
         currentResponseTask = Task {
+            // Runs on every exit, not just the happy path. The privacy-blocked
+            // branch returns early, and without this it would strand a
+            // transiently-shown overlay on screen forever.
+            defer {
+                if !Task.isCancelled {
+                    voiceState = .idle
+                    scheduleTransientHideIfNeeded()
+                }
+            }
+
             // Stay in processing (spinner) state — no streaming text displayed
             voiceState = .processing
 
@@ -589,34 +608,9 @@ final class CompanionManager: ObservableObject {
 
                 if let pointCoordinate = parseResult.coordinate,
                    let targetScreenCapture {
-                    // Claude's coordinates are in the screenshot's pixel space
-                    // (top-left origin, e.g. 1280x831). Scale to the display's
-                    // point space (e.g. 1512x982), then convert to AppKit global coords.
-                    let screenshotWidth = CGFloat(targetScreenCapture.screenshotWidthInPixels)
-                    let screenshotHeight = CGFloat(targetScreenCapture.screenshotHeightInPixels)
-                    let displayWidth = CGFloat(targetScreenCapture.displayWidthInPoints)
-                    let displayHeight = CGFloat(targetScreenCapture.displayHeightInPoints)
-                    let displayFrame = targetScreenCapture.displayFrame
-
-                    // Clamp to screenshot coordinate space
-                    let clampedX = max(0, min(pointCoordinate.x, screenshotWidth))
-                    let clampedY = max(0, min(pointCoordinate.y, screenshotHeight))
-
-                    // Scale from screenshot pixels to display points
-                    let displayLocalX = clampedX * (displayWidth / screenshotWidth)
-                    let displayLocalY = clampedY * (displayHeight / screenshotHeight)
-
-                    // Convert from top-left origin (screenshot) to bottom-left origin (AppKit)
-                    let appKitY = displayHeight - displayLocalY
-
-                    // Convert display-local coords to global screen coords
-                    let globalLocation = CGPoint(
-                        x: displayLocalX + displayFrame.origin.x,
-                        y: appKitY + displayFrame.origin.y
-                    )
-
-                    detectedElementScreenLocation = globalLocation
-                    detectedElementDisplayFrame = displayFrame
+                    detectedElementScreenLocation = targetScreenCapture
+                        .globalAppKitPoint(forScreenshotPixel: pointCoordinate)
+                    detectedElementDisplayFrame = targetScreenCapture.displayFrame
                     print("🎯 Element pointing: (\(Int(pointCoordinate.x)), \(Int(pointCoordinate.y))) → \"\(parseResult.elementLabel ?? "element")\"")
                 } else {
                     print("🎯 Element pointing: \(parseResult.elementLabel ?? "no element")")
@@ -644,6 +638,9 @@ final class CompanionManager: ObservableObject {
                         try await buddyTTSProvider.speak(spokenText)
                         // speak returns once playback has started — audio is now playing
                         voiceState = .responding
+                    } catch is CancellationError {
+                        // The user spoke again mid-synthesis. This response is
+                        // superseded — say nothing, and don't call it an error.
                     } catch {
                         print("⚠️ TTS error: \(error)")
                         speakErrorFallback(for: error)
@@ -654,11 +651,6 @@ final class CompanionManager: ObservableObject {
             } catch {
                 print("⚠️ Companion response error: \(error)")
                 speakErrorFallback(for: error)
-            }
-
-            if !Task.isCancelled {
-                voiceState = .idle
-                scheduleTransientHideIfNeeded()
             }
         }
     }
@@ -672,15 +664,21 @@ final class CompanionManager: ObservableObject {
 
         transientHideTask?.cancel()
         transientHideTask = Task {
+            // Both waits are bounded. `detectedElementScreenLocation` is only
+            // cleared by an overlay that actually navigates, so a target that
+            // lands on no screen would otherwise spin here forever and the
+            // overlay would never hide.
+            let deadline = Date().addingTimeInterval(Self.transientHideMaximumWaitSeconds)
+
             // Wait for TTS audio to finish playing
-            while buddyTTSProvider.isPlaying {
+            while buddyTTSProvider.isPlaying, Date() < deadline {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 guard !Task.isCancelled else { return }
             }
 
             // Wait for pointing animation to finish (location is cleared
             // when the buddy flies back to the cursor)
-            while detectedElementScreenLocation != nil {
+            while detectedElementScreenLocation != nil, Date() < deadline {
                 try? await Task.sleep(nanoseconds: 200_000_000)
                 guard !Task.isCancelled else { return }
             }
@@ -706,7 +704,8 @@ final class CompanionManager: ObservableObject {
         case .claudeCLIProducedNoResult, .none:
             utterance = "Something went wrong while getting a response. Please try again."
         }
-        let synthesizer = NSSpeechSynthesizer()
+        let synthesizer = errorSpeechSynthesizer ?? NSSpeechSynthesizer()
+        errorSpeechSynthesizer = synthesizer
         synthesizer.startSpeaking(utterance)
         voiceState = .responding
     }
@@ -886,27 +885,12 @@ final class CompanionManager: ObservableObject {
                     return
                 }
 
-                let screenshotWidth = CGFloat(cursorScreenCapture.screenshotWidthInPixels)
-                let screenshotHeight = CGFloat(cursorScreenCapture.screenshotHeightInPixels)
-                let displayWidth = CGFloat(cursorScreenCapture.displayWidthInPoints)
-                let displayHeight = CGFloat(cursorScreenCapture.displayHeightInPoints)
-                let displayFrame = cursorScreenCapture.displayFrame
-
-                let clampedX = max(0, min(pointCoordinate.x, screenshotWidth))
-                let clampedY = max(0, min(pointCoordinate.y, screenshotHeight))
-                let displayLocalX = clampedX * (displayWidth / screenshotWidth)
-                let displayLocalY = clampedY * (displayHeight / screenshotHeight)
-                let appKitY = displayHeight - displayLocalY
-                let globalLocation = CGPoint(
-                    x: displayLocalX + displayFrame.origin.x,
-                    y: appKitY + displayFrame.origin.y
-                )
-
                 // Set custom bubble text so the pointing animation uses Claude's
                 // comment instead of a random phrase
                 detectedElementBubbleText = parseResult.spokenText
-                detectedElementScreenLocation = globalLocation
-                detectedElementDisplayFrame = displayFrame
+                detectedElementScreenLocation = cursorScreenCapture
+                    .globalAppKitPoint(forScreenshotPixel: pointCoordinate)
+                detectedElementDisplayFrame = cursorScreenCapture.displayFrame
                 print("🎯 Onboarding demo: pointing at \"\(parseResult.elementLabel ?? "element")\" — \"\(parseResult.spokenText)\"")
             } catch {
                 print("⚠️ Onboarding demo error: \(error)")

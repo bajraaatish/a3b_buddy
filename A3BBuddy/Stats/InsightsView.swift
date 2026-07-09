@@ -32,7 +32,7 @@ struct InsightsView: View {
                         )
                         StatTile(
                             value: "\(summary.currentStreak)",
-                            caption: summary.currentStreak == 1 ? "Day streak" : "Day streak",
+                            caption: summary.currentStreak == 1 ? "Day streak" : "Days streak",
                             badge: summary.currentStreak > 0 ? Badge(icon: "flame.fill", text: "active") : nil
                         )
                         StatTile(

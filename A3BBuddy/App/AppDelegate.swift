@@ -141,7 +141,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             rawValue: UserDefaults.standard.string(forKey: PrefKey.retention) ?? ""
         ) ?? .forever
         guard retention != .off else { return }
-        try? store.save(result)
+        do {
+            try store.save(result)
+        } catch {
+            // Don't announce a save that didn't happen — History would refresh
+            // and show nothing while the user believes the transcript was kept.
+            NSLog("a3b Buddy: failed to save dictation (\(error))")
+            return
+        }
         NotificationCenter.default.post(name: .dictationDidSave, object: nil)
     }
 
@@ -211,18 +218,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Login item
 
-    /// Registers the app as a login item so it launches automatically on
-    /// startup. Uses SMAppService which shows the app in System Settings >
-    /// General > Login Items, letting the user toggle it off if they want.
+    /// Registers the app as a login item on first launch so it starts on boot.
+    /// Uses SMAppService, which lists the app in System Settings > General >
+    /// Login Items.
+    ///
+    /// First launch *only*. Settings' "Launch at login" toggle unregisters, which
+    /// leaves the status `.notRegistered` — re-registering on every launch would
+    /// quietly undo that choice by the next reboot. `.requiresApproval` means the
+    /// user switched it off in System Settings; that is theirs to keep too.
     private func registerAsLoginItemIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: PrefKey.didRegisterLoginItem) else { return }
+
+        // Anyone who has already onboarded has launched before, so whatever their
+        // login-item state is now, they chose it. Only a genuinely first launch
+        // gets the default-on treatment.
         let loginItemService = SMAppService.mainApp
-        if loginItemService.status != .enabled {
-            do {
-                try loginItemService.register()
-                print("🎯 a3b Buddy: Registered as login item")
-            } catch {
-                print("⚠️ a3b Buddy: Failed to register as login item: \(error)")
-            }
+        guard !defaults.bool(forKey: PrefKey.hasOnboarded),
+              loginItemService.status != .enabled,
+              loginItemService.status != .requiresApproval
+        else {
+            defaults.set(true, forKey: PrefKey.didRegisterLoginItem)
+            return
+        }
+
+        do {
+            try loginItemService.register()
+            defaults.set(true, forKey: PrefKey.didRegisterLoginItem)
+            print("🎯 a3b Buddy: Registered as login item")
+        } catch {
+            print("⚠️ a3b Buddy: Failed to register as login item: \(error)")
         }
     }
 

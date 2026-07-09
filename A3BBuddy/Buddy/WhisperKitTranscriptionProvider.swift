@@ -344,8 +344,21 @@ final class WhisperSTTHelperClient: @unchecked Sendable {
                     return
                 }
                 self.pendingResponseContinuations[requestID] = continuation
-                stdinFileHandle.write(requestBody)
-                stdinFileHandle.write(Data("\n".utf8))
+                do {
+                    // `write(contentsOf:)`, not `write(_:)`: the helper can exit
+                    // between the spawn check and here, and the legacy overload
+                    // raises an ObjC exception on a broken pipe that Swift cannot
+                    // catch. The continuation is already registered, so a failed
+                    // write has to resolve it or the caller hangs.
+                    try stdinFileHandle.write(contentsOf: requestBody)
+                    try stdinFileHandle.write(contentsOf: Data("\n".utf8))
+                } catch {
+                    self.resumePendingContinuationLocked(forRequestID: requestID, with: .failure(
+                        WhisperKitTranscriptionProviderError(
+                            message: "Failed to send audio to the Whisper helper: \(error.localizedDescription)"
+                        )
+                    ))
+                }
             }
         }
     }
@@ -451,6 +464,7 @@ final class WhisperSTTHelperClient: @unchecked Sendable {
     }
 
     deinit {
-        helperProcess?.terminate()
+        // `terminate()` raises NSInvalidArgumentException on a process that isn't running.
+        if helperProcess?.isRunning == true { helperProcess?.terminate() }
     }
 }
